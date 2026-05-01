@@ -86,6 +86,60 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
+# Cutoff presets
+# ---------------------------------------------------------------------------
+#
+# Two named recipes designed to be used as a *pair*:
+#
+#   strict      = high-specificity nomination set — what you'd call confidently
+#                 somatic. Use as the candidate list when comparing samples.
+#   sensitive   = broad evidence net — anything that has even a few alt-supporting
+#                 reads. Used for the rescue check: when a strict call in sample A
+#                 doesn't appear in sample B's strict set, you check the sensitive
+#                 set of B; if there's evidence at low VAF/quality, it's a shared
+#                 variant rather than B-absent. Normal-side cuts are deliberately
+#                 unrestricted because rescue is a tumor-evidence question, not a
+#                 germline-leakage question (that was already settled at strict
+#                 nomination time on the other sample).
+#
+# strict ⊂ sensitive must hold in expectation: every variant that passes strict
+# also passes sensitive. The values below preserve that invariant.
+
+PRESETS = {
+    "strict": dict(
+        qual=200.0,
+        min_tumor_vaf=0.15, min_tumor_ad=10, min_tumor_dp=50,  max_tumor_dp=1000,
+        max_normal_vaf=0.005, max_normal_ad=0,
+        min_normal_dp=30,   max_normal_dp=1000,
+        min_mqm=60.0, snvs_only=True,
+        pass_values="PASS,.",
+    ),
+    "sensitive": dict(
+        qual=1.0,
+        min_tumor_vaf=0.02, min_tumor_ad=2,  min_tumor_dp=5,   max_tumor_dp=10000,
+        max_normal_vaf=1.0, max_normal_ad=10**9,                  # don't restrict normal
+        min_normal_dp=0,   max_normal_dp=10**9,
+        min_mqm=30.0, snvs_only=False,
+        pass_values="PASS,.,LowQual,LOWQUAL,LOWMAPQ",
+    ),
+}
+
+
+def apply_preset(args: "argparse.Namespace") -> None:
+    """Overwrite individual cutoff flags in `args` with values from a named preset.
+    Only fields the preset cares about are touched; flags the user explicitly
+    set on the command line will still be overridden — that's the intended
+    semantics for a preset (atomic, reproducible)."""
+    if not getattr(args, "preset", None) or args.preset == "custom":
+        return
+    p = PRESETS.get(args.preset)
+    if p is None:
+        return
+    for k, v in p.items():
+        setattr(args, k, v)
+
+
+# ---------------------------------------------------------------------------
 # I/O helpers
 # ---------------------------------------------------------------------------
 
@@ -106,10 +160,16 @@ def smart_open_write(path: str, gzip_output: bool) -> io.TextIOBase:
 
 
 def out_path_for(input_path: str, out_dir: Optional[str], in_place: bool,
-                 gzip_output: bool) -> str:
+                 gzip_output: bool, preset: Optional[str] = None) -> str:
     base = os.path.basename(input_path)
     base = re.sub(r"\.vcf(\.gz)?$", "", base, flags=re.IGNORECASE)
-    suffix = ".somatic_subset.vcf"
+    # Suffix carries the preset so paired strict/sensitive runs land on different filenames.
+    if preset == "strict":
+        suffix = ".strict_subset.vcf"
+    elif preset == "sensitive":
+        suffix = ".sensitive_subset.vcf"
+    else:
+        suffix = ".somatic_subset.vcf"
     if gzip_output:
         suffix += ".gz"
     if in_place:
@@ -460,6 +520,7 @@ def cutoff_lines(args: argparse.Namespace, tumor_name: str, normal_name: str) ->
     items = [
         ("timestamp", stamp),
         ("command", cmd),
+        ("preset", getattr(args, "preset", "custom") or "custom"),
         ("tumor_sample", tumor_name),
         ("normal_sample", normal_name),
         ("qual", args.qual),
@@ -578,6 +639,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--gzip-output", action="store_true",
         help="Write outputs as .vcf.gz (gzip; not bgzip-indexed).",
     )
+    p.add_argument(
+        "--preset", choices=["strict", "sensitive", "custom"], default="custom",
+        help="Apply a named cutoff preset. 'strict' = high-specificity nomination set "
+             "(qual>=200, mqm>=60, t-vaf>=0.15, t-ad>=10, n-vaf<=0.005, n-ad=0, snv-only). "
+             "'sensitive' = broad evidence net for rescue checks "
+             "(qual>=1, mqm>=30, t-vaf>=0.02, t-ad>=2, normal unrestricted). "
+             "'custom' (default) = use the individual --min-*/--max-* flags as set on the CLI. "
+             "Output filename gets a '.strict_subset.vcf' / '.sensitive_subset.vcf' suffix when a "
+             "preset is used so paired runs land on different files.",
+    )
 
     # Sample identification
     p.add_argument(
@@ -681,6 +752,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.in_place and args.output_dir:
         sys.exit("ERROR: --in-place and --output-dir are mutually exclusive.")
 
+    # Apply named preset BEFORE we materialize pass_values_set so it can override --pass-values.
+    apply_preset(args)
     args.pass_values_set = {v.strip() for v in args.pass_values.split(",") if v.strip()}
 
     inputs = collect_inputs(args)
@@ -696,12 +769,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.dry_run:
         for p in inputs:
-            print(f"DRY-RUN -> {out_path_for(p, args.output_dir, args.in_place, args.gzip_output)}")
+            print(f"DRY-RUN -> {out_path_for(p, args.output_dir, args.in_place, args.gzip_output, args.preset)}")
         return 0
 
     rows: List[Dict[str, object]] = []
     for ip in inputs:
-        op = out_path_for(ip, args.output_dir, args.in_place, args.gzip_output)
+        op = out_path_for(ip, args.output_dir, args.in_place, args.gzip_output, args.preset)
         if args.verbose:
             sys.stderr.write(f"--> {ip}\n    {op}\n")
         try:

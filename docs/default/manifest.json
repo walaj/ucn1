@@ -1,9 +1,15 @@
 {
   "name": "ucn1 default subsets",
-  "description": "FreeBayes tumor-vs-normal somatic subsets, default cutoffs.",
+  "description": "FreeBayes tumor-vs-normal somatic subsets. Sensitive subsets are gzipped (.vcf.gz) so they fit GitHub's 100MB per-file limit; the explorer auto-decompresses them via DecompressionStream.",
   "files": [
+    "BostonGene_bladder23_freebayes_tumor_vs_normal.sensitive_subset.vcf.gz",
     "BostonGene_bladder23_freebayes_tumor_vs_normal.somatic_subset.vcf",
+    "BostonGene_bladder23_freebayes_tumor_vs_normal.strict_subset.vcf",
+    "CeGaT_liver_2023_tumor_vs_normal.freebayes.sensitive_subset.vcf.gz",
     "CeGaT_liver_2023_tumor_vs_normal.freebayes.somatic_subset.vcf",
-    "bladder_n1_Personalis_20250314_WGS_results_freebayes_variant_calling_freebayes_tumor_vs_normal_tumor_vs_normal.freebayes.somatic_subset.vcf"
+    "CeGaT_liver_2023_tumor_vs_normal.freebayes.strict_subset.vcf",
+    "bladder_n1_Personalis_20250314_WGS_results_freebayes_variant_calling_freebayes_tumor_vs_normal_tumor_vs_normal.freebayes.sensitive_subset.vcf.gz",
+    "bladder_n1_Personalis_20250314_WGS_results_freebayes_variant_calling_freebayes_tumor_vs_normal_tumor_vs_normal.freebayes.somatic_subset.vcf",
+    "bladder_n1_Personalis_20250314_WGS_results_freebayes_variant_calling_freebayes_tumor_vs_normal_tumor_vs_normal.freebayes.strict_subset.vcf"
   ]
 }

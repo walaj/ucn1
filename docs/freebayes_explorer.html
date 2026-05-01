@@ -254,7 +254,7 @@ th.w-gt,th.gt-head{cursor:help}
 </div>
 
 <div class="compare-panel" id="compare-panel" style="display:none">
-  <div class="cp-title">Compare two files <span class="hint">— pick A and B; click any region or chip to scope the table</span></div>
+  <div class="cp-title">Compare two samples <span class="hint">— click any Venn region or chip to scope the table</span></div>
   <div class="cp-row" id="cp-pickers-row">
     <div class="cp-pickers">
       <div class="ctrl"><label>A</label><select id="cp-a"></select></div>
@@ -369,7 +369,10 @@ const S = {
   logScale: { qual: false, odds: false },
   bed: null,          // {byChr, intervalCount, totalBp, name}
   bedActive: false,
-  cmp: { a: null, b: null, mode: "all" },  // pairwise comparison state
+  // a / b are now logical-sample stems (strings), not file IDs. Each sample
+  // resolves to a strict + sensitive partner pair behind the scenes.
+  cmp: { a: null, b: null, mode: "all" },
+  samples: new Map(),  // stem -> { stem, displayName, color, files:{strict,sensitive,default}, strict, sensitive }
   f: {
     search: "", region: null, qualMin: null, oddsMin: null, mqmMin: null,
     dpMin: null, tvafMin: null, nvafMax: null, tadMin: null, nadMax: null,
@@ -471,8 +474,8 @@ document.querySelectorAll(".log-tog").forEach(b => {
 });
 
 /* === Compare panel events === */
-$("cp-a").addEventListener("change", () => { S.cmp.a = +$("cp-a").value; render(); });
-$("cp-b").addEventListener("change", () => { S.cmp.b = +$("cp-b").value; render(); });
+$("cp-a").addEventListener("change", () => { S.cmp.a = $("cp-a").value || null; render(); });
+$("cp-b").addEventListener("change", () => { S.cmp.b = $("cp-b").value || null; render(); });
 $("cp-swap").onclick = () => {
   const t = S.cmp.a; S.cmp.a = S.cmp.b; S.cmp.b = t;
   render();
@@ -533,6 +536,7 @@ async function loadVCFs(fileList) {
     S.files.length + " file" + (S.files.length===1?"":"s") + " — " +
     S.rows.length.toLocaleString() + " variants — parsed in " + ms + "ms";
   if (S.bed) annotateAllRowsWithGenes();
+  buildSampleIndex();
   showWorkspace();
   render();
   renderFilesList();
@@ -558,6 +562,8 @@ function ingestVCF(text, name, fileEntry) {
       header.push(line);
       const m = line.match(/^##sarek_subset_(tumor|normal)_sample=(.+)$/);
       if (m) { if (m[1]==="tumor") tumor = m[2]; else normal = m[2]; }
+      const mp = line.match(/^##sarek_subset_preset=(.+)$/);
+      if (mp) fileEntry.preset = mp[1].trim();
       continue;
     }
     if (line.startsWith("#CHROM")) {
@@ -692,15 +698,64 @@ function classifyType(ref, alt) {
   return "complex";
 }
 
+function shortLabel(name, max) {
+  max = max || 32;
+  if (!name) return "";
+  return name.length > max ? name.slice(0, max - 1) + "…" : name;
+}
+
 function shortFilename(name) {
   // strip common suffixes & path components
   let s = name.split("/").pop();
-  s = s.replace(/\.somatic_subset\.vcf(\.gz)?$/i, "")
+  s = s.replace(/\.(strict|sensitive|somatic)_subset\.vcf(\.gz)?$/i, "")
        .replace(/\.freebayes\.somatic_subset\.vcf(\.gz)?$/i, "")
        .replace(/\.freebayes\.vcf(\.gz)?$/i, "")
        .replace(/_freebayes_tumor_vs_normal/i, "")
        .replace(/\.vcf(\.gz)?$/i, "");
   return s.length > 32 ? s.slice(0, 30) + "…" : s;
+}
+
+// Logical-sample identifier — strip the preset suffix from a filename so the
+// strict/sensitive/default copies of one sample collapse to the same stem.
+function logicalStem(name) {
+  let s = String(name).split("/").pop();
+  s = s.replace(/\.(strict|sensitive|somatic)_subset\.vcf(\.gz)?$/i, "")
+       .replace(/\.vcf(\.gz)?$/i, "");
+  return s;
+}
+
+// Determine the preset for a file. Prefer the explicit ##sarek_subset_preset=
+// header tag (parsed during ingest); fall back to filename suffix.
+function inferPreset(file) {
+  if (!file) return "default";
+  if (file.preset === "strict" || file.preset === "sensitive") return file.preset;
+  if (/\.strict_subset\.vcf(\.gz)?$/i.test(file.name))    return "strict";
+  if (/\.sensitive_subset\.vcf(\.gz)?$/i.test(file.name)) return "sensitive";
+  return "default";
+}
+
+// Group all loaded files into logical samples by stem.  Each sample has a
+// resolved (strict, sensitive) pair: explicit files when present, else the
+// 'default' file as fallback for either side, else strict/sensitive cover for
+// each other.  When strict==sensitive the rescue degenerates to symmetric.
+function buildSampleIndex() {
+  S.samples = new Map();
+  for (const f of S.files) {
+    if (f.status && f.status !== "ok") continue;
+    const stem = logicalStem(f.name);
+    if (!S.samples.has(stem)) {
+      S.samples.set(stem, { stem, displayName: shortFilename(stem + ".vcf"), files: {}, color: f.color });
+    }
+    const s = S.samples.get(stem);
+    const p = inferPreset(f);
+    s.files[p] = f;
+  }
+  for (const s of S.samples.values()) {
+    s.strict    = s.files.strict   || s.files.default || s.files.sensitive;
+    s.sensitive = s.files.sensitive || s.files.default || s.files.strict;
+    if (s.strict)    s.color = s.strict.color;
+    s.hasPair = !!(s.files.strict && s.files.sensitive);
+  }
 }
 
 function parseInfo(s) {
@@ -895,22 +950,45 @@ function matchRow(r, f, ignoreCmp) {
   if (f.types.size   && !f.types.has(r.type)) return false;
   if (f.filters.size && !f.filters.has(r.filter)) return false;
   if (f.samples.size && !f.samples.has(r.sample)) return false;
-  if (!ignoreCmp && S.cmp.mode !== "all" && S.cmp.a != null && S.cmp.b != null && S.files.length >= 2) {
-    const fA = S.files.find(x => x.id === S.cmp.a);
-    const fB = S.files.find(x => x.id === S.cmp.b);
-    if (fA && fB) {
-      const inA = fA.keys && fA.keys.has(r._key);
-      const inB = fB.keys && fB.keys.has(r._key);
-      switch (S.cmp.mode) {
-        case "aonly": if (r.sourceId !== S.cmp.a || inB)  return false; break;
-        case "bonly": if (r.sourceId !== S.cmp.b || inA)  return false; break;
-        case "both":  if (r.sourceId !== S.cmp.a || !inB) return false; break;
-        case "union":
-          // From A: always pass. From B: only if not in A. Other files: drop.
-          if (r.sourceId === S.cmp.a) break;
-          if (r.sourceId === S.cmp.b && !inA) break;
-          return false;
-      }
+  // Hide rows whose source file isn't the "strict" pick of any logical sample.
+  // Sensitive partners and any default-with-strict-sibling files contribute their
+  // keys to set operations but should never show up as table rows.
+  if (S.samples && S.samples.size && !ignoreCmp) {
+    let isPrimary = false;
+    for (const s of S.samples.values()) {
+      if (s.strict && s.strict.id === r.sourceId) { isPrimary = true; break; }
+    }
+    if (!isPrimary) return false;
+  }
+
+  if (!ignoreCmp && S.cmp.mode !== "all" && S.cmp.a != null && S.cmp.b != null
+      && S.samples && S.samples.size >= 2) {
+    const sA = S.samples.get(S.cmp.a);
+    const sB = S.samples.get(S.cmp.b);
+    if (!sA || !sB || !sA.strict || !sB.strict) return true;
+    // Asymmetric formulas (always — strict/sens machinery is invisible to user):
+    //   A only = A.strict − B.sens
+    //   A ∩ B = A.strict ∩ B.sens
+    //   B only = B.strict − A.sens
+    //   A ∪ B = A only ∪ A∩B ∪ B only  (i.e., the three labelled regions)
+    const isFromAStrict = r.sourceId === sA.strict.id;
+    const isFromBStrict = r.sourceId === sB.strict.id;
+    if (!isFromAStrict && !isFromBStrict) return false;
+    const k = r._key;
+    const sensA = sA.sensitive || sA.strict;
+    const sensB = sB.sensitive || sB.strict;
+    const inBE  = sensB.keys && sensB.keys.has(k);
+    const inAE  = sensA.keys && sensA.keys.has(k);
+    const inAS  = sA.strict.keys && sA.strict.keys.has(k);
+    switch (S.cmp.mode) {
+      case "aonly":  return !!(isFromAStrict && !inBE);
+      case "bonly":  return !!(isFromBStrict && !inAE);
+      case "both":   return !!(isFromAStrict && inBE);
+      case "union":
+        // A.strict ∪ (B.strict − A.sens)  — dedupe-stable visualization of the three regions.
+        if (isFromAStrict) return true;
+        if (isFromBStrict && !inAE) return true;
+        return false;
     }
   }
   return true;
@@ -969,72 +1047,81 @@ function render() {
 
 /* === Compare panel === */
 function rCompare() {
-  // Populate dropdowns from S.files; default A=first, B=second when not yet chosen.
-  const aSel = $("cp-a"), bSel = $("cp-b");
-  const ids = S.files.map(f => f.id);
-  if (S.cmp.a == null || !ids.includes(S.cmp.a)) S.cmp.a = ids[0] || null;
-  if (S.cmp.b == null || !ids.includes(S.cmp.b)) S.cmp.b = ids[1] || ids[0] || null;
-  function fillSel(sel, currentId) {
+  const stems = Array.from(S.samples.keys());
+  if (S.cmp.a == null || !S.samples.has(S.cmp.a)) S.cmp.a = stems[0] || null;
+  if (S.cmp.b == null || !S.samples.has(S.cmp.b)) S.cmp.b = stems[1] || stems[0] || null;
+
+  function fillSel(sel, currentStem) {
     sel.innerHTML = "";
-    for (const f of S.files) {
+    for (const stem of stems) {
+      const s = S.samples.get(stem);
       const o = document.createElement("option");
-      o.value = String(f.id);
-      const lbl = f.name.length > 50 ? f.name.slice(0, 48) + "…" : f.name;
-      o.textContent = lbl + "  (" + f.count.toLocaleString() + ")";
-      o.style.color = f.color;
-      if (f.id === currentId) o.selected = true;
+      o.value = stem;
+      const lbl = s.displayName.length > 60 ? s.displayName.slice(0, 58) + "…" : s.displayName;
+      const totals = s.strict ? s.strict.count.toLocaleString() : "?";
+      o.textContent = lbl + "  (" + totals + ")";
+      o.style.color = s.color || "#e1e4ed";
+      if (stem === currentStem) o.selected = true;
       sel.appendChild(o);
     }
   }
-  fillSel(aSel, S.cmp.a);
-  fillSel(bSel, S.cmp.b);
+  fillSel($("cp-a"), S.cmp.a);
+  fillSel($("cp-b"), S.cmp.b);
 
-  if (S.files.length < 2) {
-    $("cp-detail-row").innerHTML = '<div class="cp-empty">Load at least two VCFs to compare.</div>';
+  if (stems.length < 2) {
+    $("cp-detail-row").innerHTML = '<div class="cp-empty">Load at least two samples to compare.</div>';
     $("cp-modes").style.display = "none";
     return;
   }
   $("cp-modes").style.display = "";
-  // restore detail row container if it was replaced by an empty message
   if (!$("cp-venn") || !$("cp-stats")) {
     $("cp-detail-row").innerHTML = '<div class="cp-venn" id="cp-venn"></div><div class="cp-stats" id="cp-stats"></div>';
   }
 
-  // Compute counts honoring everything except cmp.mode (we want to know overlap on the post-filter rows
-  // so the Venn updates as the user tweaks per-site cutoffs).
-  const passByFile = new Map(); // fileId -> Set<key>
+  // Build per-file post-filter key sets (every loaded file, ignoring cmp.mode).
+  // Per-site filters are applied so the Venn updates as the user moves cutoffs.
+  const passByFile = new Map();
   for (const f of S.files) passByFile.set(f.id, new Set());
-  // Filter S.rows under the same constraints as doFilter, but skip cmp.mode.
-  const ff = S.f, savedMode = S.cmp.mode; S.cmp.mode = "all";
+  const savedMode = S.cmp.mode; S.cmp.mode = "all";
   for (const r of S.rows) {
-    if (!matchRow(r, ff, /*ignoreCmp=*/true)) continue;
+    if (!matchRow(r, S.f, /*ignoreCmp=*/true)) continue;
     passByFile.get(r.sourceId).add(r._key);
   }
   S.cmp.mode = savedMode;
 
-  const A = passByFile.get(S.cmp.a) || new Set();
-  const B = passByFile.get(S.cmp.b) || new Set();
-  let inter = 0;
-  const [s, big] = A.size <= B.size ? [A, B] : [B, A];
-  for (const k of s) if (big.has(k)) inter++;
-  const aOnly = A.size - inter, bOnly = B.size - inter;
-  const union = A.size + B.size - inter;
-  const jacc  = union ? inter/union : 0;
-  const overlap = Math.min(A.size, B.size) ? inter/Math.min(A.size, B.size) : 0;
+  const sA = S.samples.get(S.cmp.a), sB = S.samples.get(S.cmp.b);
+  const colorA = (sA && sA.color) || "#6c8cff";
+  const colorB = (sB && sB.color) || "#f87171";
+  const AS = (sA && sA.strict)    ? (passByFile.get(sA.strict.id)    || new Set()) : new Set();
+  const BS = (sB && sB.strict)    ? (passByFile.get(sB.strict.id)    || new Set()) : new Set();
+  const AE = (sA && sA.sensitive) ? (passByFile.get(sA.sensitive.id) || new Set()) : AS;
+  const BE = (sB && sB.sensitive) ? (passByFile.get(sB.sensitive.id) || new Set()) : BS;
 
-  const fA = S.files.find(f => f.id === S.cmp.a) || {color:"#6c8cff"};
-  const fB = S.files.find(f => f.id === S.cmp.b) || {color:"#f87171"};
+  // User's asymmetric formula:
+  //   A only = A.strict − B.sens
+  //   A ∩ B = A.strict ∩ B.sens
+  //   B only = B.strict − A.sens
+  //   (B.strict ∩ A.sens but not in A.strict is silently dropped — accepted asymmetry.)
+  let aOnly = 0, bOnly = 0, inter = 0;
+  for (const k of AS) (BE.has(k) ? inter++ : aOnly++);
+  for (const k of BS) if (!AE.has(k)) bOnly++;
+  const union = aOnly + inter + bOnly;
+  const jacc = union ? inter/union : 0;
 
-  $("cp-venn").innerHTML = vennSVG(A.size, B.size, inter, fA.color, fB.color);
+  $("cp-venn").innerHTML = vennSVG(aOnly, inter, bOnly, colorA, colorB, /*rescueActive=*/(sA && sA.hasPair && sB && sB.hasPair));
+
+  const pairBadge = (s) => s.hasPair ? '<span style="color:var(--green);font-size:.6rem">paired</span>'
+                                     : '<span style="color:var(--amber);font-size:.6rem">no sens partner</span>';
   $("cp-stats").innerHTML =
-    `<div class="k">|A|</div>     <div class="v a">${A.size.toLocaleString()}</div>` +
-    `<div class="k">|B|</div>     <div class="v b">${B.size.toLocaleString()}</div>` +
+    `<div class="k">A</div> <div class="v a" title="${esc(sA.displayName)}">${esc(shortLabel(sA.displayName))} ${pairBadge(sA)}</div>` +
+    `<div class="k">B</div> <div class="v b" title="${esc(sB.displayName)}">${esc(shortLabel(sB.displayName))} ${pairBadge(sB)}</div>` +
+    `<div class="k">|A|</div> <div class="v a">${AS.size.toLocaleString()}</div>` +
+    `<div class="k">|B|</div> <div class="v b">${BS.size.toLocaleString()}</div>` +
     `<div class="k">A only</div>  <div class="v">${aOnly.toLocaleString()}</div>` +
     `<div class="k">A ∩ B</div>  <div class="v ab">${inter.toLocaleString()}</div>` +
     `<div class="k">B only</div>  <div class="v">${bOnly.toLocaleString()}</div>` +
     `<div class="k">A ∪ B</div>  <div class="v">${union.toLocaleString()}</div>` +
-    `<div class="k">Jaccard</div> <div class="v">${jacc.toFixed(4)}</div>` +
-    `<div class="k">Overlap</div> <div class="v">${overlap.toFixed(4)}</div>`;
+    `<div class="k">Jaccard</div> <div class="v">${jacc.toFixed(4)}</div>`;
 
   // Wire region clicks on the Venn (set the mode chip, re-render).
   $("cp-venn").querySelectorAll("[data-cmpmode]").forEach(el => {
@@ -1054,42 +1141,54 @@ function syncCmpModeChips() {
   });
 }
 
-function vennSVG(a, b, inter, colorA, colorB) {
-  // Area-proportional-ish: radius = sqrt(count) * scale; position scaled by Jaccard.
-  const total = Math.max(a + b - inter, 1);
+function vennSVG(aOnly, inter, bOnly, colorA, colorB, rescueActive) {
+  // The three numeric labels are passed in directly because under the
+  // user's asymmetric formulas
+  //   A only = A.strict − B.sens
+  //   A ∩ B = A.strict ∩ B.sens
+  //   B only = B.strict − A.sens
+  // we cannot derive bOnly from |A.strict|, |B.strict|, |inter| alone — the
+  // intersection can exceed |B.strict| (it counts A.strict members rescued
+  // by evidence in B.sens, which need not be in B.strict at all).
+  //
+  // For the *geometry* we use the displayed-region totals so each circle's
+  // visual mass corresponds to what's actually drawn in it.
+  const aTot = aOnly + inter;
+  const bTot = bOnly + inter;
+  const total = Math.max(aOnly + inter + bOnly, 1);
   const minR = 28, maxR = 60;
-  const refMax = Math.max(a, b, 1);
-  const rA = Math.max(minR, Math.min(maxR, maxR * Math.sqrt(a / refMax)));
-  const rB = Math.max(minR, Math.min(maxR, maxR * Math.sqrt(b / refMax)));
+  const refMax = Math.max(aTot, bTot, 1);
+  const rA = Math.max(minR, Math.min(maxR, maxR * Math.sqrt(aTot / refMax)));
+  const rB = Math.max(minR, Math.min(maxR, maxR * Math.sqrt(bTot / refMax)));
+  // Distance between centers — closer ↔ larger overlap fraction.
   const j = total ? inter/total : 0;
-  // Distance between centers: 0 (full overlap) → ~rA+rB-2 (just touching).
   const d = (rA + rB) * (1 - 0.85 * j);
   const W = 220, H = 150;
   const cx = W/2, cy = H/2;
   const x1 = cx - d/2, x2 = cx + d/2;
   const numColor = "#e1e4ed";
+  const banner = rescueActive
+    ? `<text x="${cx}" y="12" text-anchor="middle" fill="#a855f7" font-size="9" font-weight="600">RESCUE</text>`
+    : "";
   return `
   <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="font-family:'SF Mono','Consolas',monospace">
-    <!-- B only (right): clickable larger zone behind everything -->
+    ${banner}
     <circle cx="${x2}" cy="${cy}" r="${rB}" fill="${colorB}" fill-opacity="0.30" stroke="${colorB}" stroke-width="1.2"
             data-cmpmode="bonly" style="cursor:pointer">
       <title>B only — click to filter</title>
     </circle>
-    <!-- A circle on top -->
     <circle cx="${x1}" cy="${cy}" r="${rA}" fill="${colorA}" fill-opacity="0.30" stroke="${colorA}" stroke-width="1.2"
             data-cmpmode="aonly" style="cursor:pointer">
       <title>A only — click to filter</title>
     </circle>
-    <!-- intersection click target: small circle in the middle (best-effort, not strictly the lens) -->
     <circle cx="${(x1+x2)/2}" cy="${cy}" r="${Math.max(8, Math.min(rA, rB) * 0.35 * (j+0.2))}"
             fill="#a855f7" fill-opacity="0.0" stroke="#a855f7" stroke-width="0.8" stroke-dasharray="2,2"
             data-cmpmode="both" style="cursor:pointer">
       <title>A ∩ B — click to filter</title>
     </circle>
-    <!-- counts -->
-    <text x="${x1 - rA*0.45}" y="${cy + 4}" text-anchor="middle" fill="${numColor}" font-size="11"   pointer-events="none">${(a-inter).toLocaleString()}</text>
+    <text x="${x1 - rA*0.45}" y="${cy + 4}" text-anchor="middle" fill="${numColor}" font-size="11"   pointer-events="none">${aOnly.toLocaleString()}</text>
     <text x="${(x1+x2)/2}"     y="${cy + 4}" text-anchor="middle" fill="#d8b4fe"   font-size="11" font-weight="600" pointer-events="none">${inter.toLocaleString()}</text>
-    <text x="${x2 + rB*0.45}" y="${cy + 4}" text-anchor="middle" fill="${numColor}" font-size="11"   pointer-events="none">${(b-inter).toLocaleString()}</text>
+    <text x="${x2 + rB*0.45}" y="${cy + 4}" text-anchor="middle" fill="${numColor}" font-size="11"   pointer-events="none">${bOnly.toLocaleString()}</text>
     <text x="${x1 - rA*0.45}" y="${cy - rA - 5}" text-anchor="middle" fill="${colorA}" font-size="9" pointer-events="none">A only</text>
     <text x="${(x1+x2)/2}"     y="${cy - Math.max(rA,rB) - 5}" text-anchor="middle" fill="#a855f7" font-size="9" pointer-events="none">A ∩ B</text>
     <text x="${x2 + rB*0.45}" y="${cy - rB - 5}" text-anchor="middle" fill="${colorB}" font-size="9" pointer-events="none">B only</text>
@@ -1111,8 +1210,9 @@ function rStats() {
 
 function rChips() {
   const bar = $("chip-bar"); bar.innerHTML = "";
+  // Source-file chip is intentionally omitted — strict/sens VCFs are hidden behind
+  // logical samples; use the A/B dropdowns above to switch sample focus.
   const groups = [
-    { k: "files",   l: "File",   field: "sourceId", labelOf: id => { const f = S.files.find(x=>x.id===id); return f ? f.name : ("file#"+id); } },
     { k: "types",   l: "Type",   field: "type",     labelOf: v => v },
     { k: "filters", l: "Filter", field: "filter",   labelOf: v => (v===""||v==="."?".":v) },
     { k: "samples", l: "Tumor",  field: "sample",   labelOf: v => v },
@@ -1163,9 +1263,13 @@ function rTable() {
           continue;
         }
         if (c.k === "source") {
+          // Show the logical sample (not the strict/sens VCF filename) so the
+          // user mental model stays "samples", not "presets".
           const f = S.files.find(x => x.id === r.sourceId);
           const color = f ? f.color : "#888";
-          h.push('<td class="' + cls + '"><span style="color:' + color + '">●</span> ' + esc(v||"-") + '</td>');
+          const stem = f ? logicalStem(f.name) : (v || "-");
+          const lbl = shortLabel(stem, 24);
+          h.push('<td class="' + cls + '" title="' + esc(stem) + '"><span style="color:' + color + '">●</span> ' + esc(lbl) + '</td>');
           continue;
         }
         if (typeof v === "number" && c.k !== "pos") v = fN(v, c.k);
@@ -1269,25 +1373,37 @@ function renderFilesList() {
   const wrap = $("files-list");
   if (!S.files.length) { wrap.style.display = "none"; return; }
   wrap.style.display = "";
-  wrap.innerHTML = S.files.map(f =>
-    `<div class="row" data-fid="${f.id}">` +
-      `<span class="nm" style="color:${f.color}">● ${esc(f.name)}</span>` +
-      `<span class="ct">${f.count.toLocaleString()}</span>` +
-      `<span class="x" data-rm="${f.id}" title="Remove this file">✕</span>` +
-    `</div>`
-  ).join("");
-  wrap.querySelectorAll("[data-rm]").forEach(x => {
+  // One row per logical sample. Strict/sens machinery is invisible to the user;
+  // the row count shown is the strict-set count, with a small badge if the
+  // sample has both a strict and a sensitive partner loaded behind the scenes.
+  const rowsHtml = [];
+  for (const s of S.samples.values()) {
+    const fileIds = Object.values(s.files).map(f => f.id);
+    const cnt = s.strict ? s.strict.count : 0;
+    const pairBadge = s.hasPair
+      ? '<span style="color:var(--green); font-size:.6rem; opacity:.8" title="Strict + sensitive partner are both loaded for this sample.">paired</span>'
+      : '<span style="color:var(--amber); font-size:.6rem; opacity:.8" title="Only one preset loaded for this sample; comparisons will degenerate to symmetric on this side.">single</span>';
+    rowsHtml.push(
+      `<div class="row" data-stem="${esc(s.stem)}">` +
+        `<span class="nm" style="color:${s.color}">● ${esc(s.displayName)} ${pairBadge}</span>` +
+        `<span class="ct">${cnt.toLocaleString()}</span>` +
+        `<span class="x" data-rm-stem="${esc(s.stem)}" data-rm-fids="${fileIds.join(',')}" title="Remove this sample (and all underlying VCFs)">✕</span>` +
+      `</div>`
+    );
+  }
+  wrap.innerHTML = rowsHtml.join("");
+  wrap.querySelectorAll("[data-rm-stem]").forEach(x => {
     x.onclick = e => {
       e.stopPropagation();
-      const fid = +x.dataset.rm;
-      S.files = S.files.filter(f => f.id !== fid);
-      S.rows = S.rows.filter(r => r.sourceId !== fid);
-      // re-id rows so id stays dense (helps sort tiebreak determinism)
+      const stem = x.dataset.rmStem;
+      const fids = (x.dataset.rmFids || "").split(",").map(Number).filter(Boolean);
+      S.files = S.files.filter(f => !fids.includes(f.id));
+      S.rows = S.rows.filter(r => !fids.includes(r.sourceId));
       S.rows.forEach((r, i) => r.id = i);
-      S.f.files.delete(fid);
-      // If we removed a file currently used in the compare panel, reset that side.
-      if (S.cmp.a === fid) S.cmp.a = null;
-      if (S.cmp.b === fid) S.cmp.b = null;
+      for (const fid of fids) S.f.files.delete(fid);
+      buildSampleIndex();
+      if (S.cmp.a === stem) S.cmp.a = null;
+      if (S.cmp.b === stem) S.cmp.b = null;
       if (!S.files.length) {
         $("vcf-zone").classList.remove("loaded");
         $("file-meta").textContent = "No files loaded";

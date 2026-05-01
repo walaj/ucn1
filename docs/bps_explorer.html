@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SvABA BPS Explorer</title>
+<style>
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --surface2: #252833;
+  --border: #2e3140; --text: #e1e4ed; --text2: #8b8fa3;
+  --accent: #6c8cff; --green: #4ade80; --red: #f87171; --amber: #fbbf24;
+  --blue: #60a5fa; --purple: #a855f7;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg);color:var(--text);min-height:100vh;font-size:12px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;border-bottom:1px solid var(--border);background:var(--surface)}
+.header h1{font-size:1rem;font-weight:600} .header h1 span{color:var(--accent)}
+.header .meta{font-size:.75rem;color:var(--text2)}
+.container{padding:.6rem 1rem}
+
+/* Upload */
+.upload-row{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;background:var(--surface);border-bottom:1px solid var(--border)}
+.upload-box{background:var(--surface2);border:2px dashed var(--border);border-radius:6px;padding:.6rem 1rem;cursor:pointer;transition:border-color .2s;font-size:.78rem;color:var(--text2);flex:1;text-align:center;max-width:400px}
+.upload-box:hover,.upload-box.over{border-color:var(--accent)}
+.upload-box.loaded{border-color:var(--green);border-style:solid}
+.upload-box input{display:none}
+.upload-box .fn{color:var(--green);font-size:.72rem;margin-top:.2rem;word-break:break-all}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:.35rem .8rem;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{opacity:.9} .btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--text)}
+
+/* Controls */
+.controls{display:flex;flex-wrap:wrap;gap:.5rem .8rem;padding:.5rem 1rem;background:var(--surface);border-bottom:1px solid var(--border);align-items:end}
+.ctrl{display:flex;flex-direction:column;gap:.2rem}
+.ctrl label{font-size:.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em}
+.ctrl input,.ctrl select{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:.3rem .5rem;font-family:inherit;font-size:.78rem;color:var(--text);width:auto}
+.ctrl input[type=number]{width:70px} .ctrl input[type=search]{width:180px} .ctrl input[type=text]{width:200px}
+.ctrl select{min-width:60px}
+.ctrl input:focus,.ctrl select:focus{outline:none;border-color:var(--accent)}
+.chips{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center}
+.chip{padding:.2rem .5rem;border-radius:4px;border:1px solid var(--border);font-size:.7rem;cursor:pointer;color:var(--text2);background:var(--surface2);transition:all .15s}
+.chip:hover{border-color:var(--accent);color:var(--text)}
+.chip.on{background:rgba(108,140,255,.15);border-color:var(--accent);color:var(--accent)}
+.chip.empty{opacity:.35}
+.preset{padding:.15rem .4rem;border-radius:3px;border:1px solid var(--border);font-size:.65rem;cursor:pointer;color:var(--text2);background:transparent}
+.preset:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Stats bar */
+.stats-bar{display:flex;gap:1.2rem;padding:.4rem 1rem;background:var(--surface);border-bottom:1px solid var(--border);font-size:.75rem;color:var(--text2)}
+.stats-bar .sv{color:var(--accent);font-weight:600}
+
+/* Charts */
+.charts-row{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;padding:.5rem 1rem;background:var(--bg)}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.4rem .5rem;min-height:140px}
+.chart-card .ct{font-size:.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem;display:flex;align-items:center;justify-content:space-between;gap:.3rem}
+.chart-card canvas{width:100%;height:120px;display:block}
+.log-tog{background:transparent;border:1px solid var(--border);color:var(--text2);font-size:.6rem;padding:1px 5px;border-radius:3px;cursor:pointer;font-family:inherit;text-transform:none;letter-spacing:0;line-height:1.1}
+.log-tog:hover{border-color:var(--accent);color:var(--text)}
+.log-tog.on{background:rgba(108,140,255,.15);border-color:var(--accent);color:var(--accent)}
+
+/* Table */
+.table-wrap{overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin:.5rem 1rem;flex:1}
+table{width:100%;border-collapse:collapse;white-space:nowrap;table-layout:auto}
+th{background:var(--surface2);color:var(--text2);text-align:left;padding:.25rem .4rem;position:sticky;top:0;cursor:pointer;user-select:none;z-index:1;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em}
+th:hover{color:var(--accent)}
+th .sa{font-size:.6em;margin-left:.15rem;opacity:.5}
+td{padding:.25rem .4rem;border-top:1px solid rgba(46,49,64,.5);font-size:.75rem;user-select:text;-webkit-user-select:text}
+tr:hover td{background:var(--surface2)}
+tr.sel td{background:#1e3a5f !important}
+tr{cursor:pointer}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+/* Per-column width/wrap rules. `nowrap` is the table default; we only loosen
+   where it makes sense (ref/alt soft-wrap at ~10ch, contig soft-wrap). */
+td.w-loc,th.w-loc{max-width:14ch}
+td.w-strand,th.w-strand{width:2.6ch;padding-left:.3rem;padding-right:.3rem;text-align:center}
+td.w-strand{font-weight:600}
+td.w-tiny,th.w-tiny{max-width:8ch;overflow:hidden;text-overflow:ellipsis}
+td.w-num,th.w-num{max-width:7ch}
+td.w-seq,th.w-seq{max-width:10ch;white-space:normal;word-break:break-all;font-family:'SF Mono','Consolas',monospace;line-height:1.1}
+td.w-wrap,th.w-wrap{max-width:22ch;white-space:normal;word-break:break-all;line-height:1.1}
+/* Genes column — comma-joined gene symbols from the user-uploaded GTF;
+   soft-wrap so multi-gene hits don't blow the row height out. */
+td.w-genes,th.w-genes{max-width:16ch;white-space:normal;word-break:break-word;line-height:1.15;color:var(--green)}
+/* Samples column — shows the full per-sample FORMAT value
+   (GT:AD:DP:SR:DR:GQ:PL:LO:LO_n), one sample per line, monospace so the
+   colon-separated fields stack column-wise visually. white-space:pre
+   preserves the embedded \n that mkRow puts between samples. */
+td.w-gt,th.w-gt{max-width:46ch;white-space:pre;line-height:1.25;font-size:.7rem}
+td.strand-plus{color:var(--green)}
+td.strand-minus{color:var(--red)}
+::selection{background:#3b5bdb;color:#fff}
+a.igv-link{color:var(--accent);text-decoration:none;cursor:pointer}
+a.igv-link:hover{text-decoration:underline}
+a.igv-link.ok{color:var(--green)}
+a.igv-link.err{color:var(--red)}
+td.pass{color:var(--green)} td.lowlod{color:var(--amber)} td.nopass{color:var(--red)}
+/* GT column cells are click-to-open-legend */
+td.gt-cell{cursor:help}
+td.gt-cell:hover{background:rgba(108,140,255,.12)}
+th.w-gt{cursor:help}
+/* GT legend popover — shared, floating, dismissed on outside click */
+#gt-legend{position:fixed;z-index:50;display:none;background:var(--surface);border:1px solid var(--accent);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.5);padding:.6rem .8rem;font-size:.72rem;color:var(--text);max-width:460px;line-height:1.45}
+#gt-legend.on{display:block}
+#gt-legend h4{font-size:.72rem;color:var(--accent);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em}
+#gt-legend .row{display:flex;gap:.4rem;margin:.15rem 0}
+#gt-legend .k{color:var(--accent);font-weight:600;min-width:4.5ch;font-family:inherit}
+#gt-legend .v{color:var(--text2)}
+#gt-legend hr{border:none;border-top:1px solid var(--border);margin:.4rem 0}
+#gt-legend .close{float:right;cursor:pointer;color:var(--text2);font-size:.9rem;line-height:1;margin-left:.4rem}
+#gt-legend .close:hover{color:var(--red)}
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:.35rem 1rem;font-size:.75rem;color:var(--text2);background:var(--surface);border-top:1px solid var(--border)}
+.pagination .pg-btns{display:flex;gap:.3rem}
+
+/* Detail panel */
+.detail-panel{margin:.5rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.dp-header{background:var(--surface2);padding:.4rem .8rem;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.dp-header strong{color:var(--text);text-transform:none;letter-spacing:0}
+.dp-body{max-height:350px;overflow:auto}
+.dp-empty{padding:.8rem;text-align:center;color:var(--text2);font-size:.78rem}
+.kv{width:100%;border-collapse:collapse;font-size:.72rem}
+.kv td{padding:2px 8px;border-bottom:1px solid rgba(46,49,64,.4);vertical-align:top}
+.kv .k{width:160px;color:var(--text2);background:rgba(0,0,0,.15);white-space:nowrap;font-weight:600}
+.kv .v{color:var(--text);word-break:break-all;white-space:pre-wrap}
+.kv tr.samp .k{color:var(--accent);background:rgba(88,166,255,.06);border-left:2px solid rgba(88,166,255,.3)}
+.kv tr.samp .v{background:rgba(88,166,255,.03)}
+.kv tr:hover td{background:#1f2937}
+
+.format-key{padding:4px 8px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:.68rem;color:var(--text2)}
+.format-key code{color:var(--accent)}
+
+/* r2c re-plot sub-panel removed — use the standalone viewer/r2c_explorer.html
+   instead. It loads an r2c TSV on its own and lets you search for any
+   contig by name, with the same rendering logic that used to live here. */
+
+@media(max-width:1100px){.charts-row{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.charts-row{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>SvABA</span> BPS Explorer</h1>
+  <div class="meta" id="file-meta">No file loaded</div>
+</div>
+
+<div class="upload-row">
+  <div class="upload-box" id="drop-zone" onclick="document.getElementById('file-input').click()">
+    Drop or click &mdash; <code>.bps.txt</code> / <code>.bps.txt.gz</code>
+    <div class="fn" id="file-name" style="display:none"></div>
+    <input type="file" id="file-input" accept=".txt,.gz,.tsv,text/plain,application/gzip">
+  </div>
+  <div class="upload-box" id="gtf-zone" onclick="document.getElementById('gtf-input').click()"
+       title="Optional: upload a BED or GTF of gene annotations. BED (recommended): 4+ column BED with gene name in col 4. GTF: GENCODE-style with exon features. When loaded, each variant row gets a Genes column.">
+    Drop or click &mdash; <code>.bed</code> / <code>.bed.gz</code> / <code>.gtf</code> / <code>.gtf.gz</code> <em>(optional, gene annotation)</em>
+    <div class="fn" id="gtf-name" style="display:none"></div>
+    <input type="file" id="gtf-input" accept=".bed,.gtf,.gz,text/plain,application/gzip">
+  </div>
+  <button class="btn-ghost btn" id="export-btn" disabled>Export TSV</button>
+</div>
+
+<div class="controls" id="controls" style="display:none">
+  <div class="ctrl"><label>Search</label><input id="f-search" type="search" placeholder="text / contig / gene"></div>
+  <div class="ctrl"><label>Region</label><input id="f-region" type="text" placeholder="chr7:55M-56M"></div>
+  <div class="ctrl"><label>Somlod &ge;</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-somlod-min" type="number" step="0.1" placeholder="-">
+      <span style="color:var(--text2)">to</span>
+      <input id="f-somlod-max" type="number" step="0.1" placeholder="-">
+      <div style="display:flex;gap:.15rem">
+        <button class="preset" data-t="f-somlod-min" data-v="0">0</button>
+        <button class="preset" data-t="f-somlod-min" data-v="3">3</button>
+        <button class="preset" data-t="f-somlod-min" data-v="6">6</button>
+        <button class="preset" data-t="f-somlod-min" data-v="10">10</button>
+      </div>
+    </div>
+  </div>
+  <div class="ctrl"><label>Maxlod &ge;</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-maxlod-min" type="number" step="0.1" placeholder="-">
+      <span style="color:var(--text2)">to</span>
+      <input id="f-maxlod-max" type="number" step="0.1" placeholder="-">
+    </div>
+  </div>
+  <div class="ctrl"><label>Qual &ge;</label><input id="f-qual-min" type="number" step="1" placeholder="-"></div>
+  <div class="ctrl"><label>Split &ge;</label><input id="f-split-min" type="number" step="1" placeholder="-"></div>
+  <div class="ctrl"><label>Alt &ge;</label><input id="f-alt-min" type="number" step="1" placeholder="-"></div>
+  <div class="ctrl"><label>Span range</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-span-min" type="number" step="1" placeholder="min">
+      <span style="color:var(--text2)">&ndash;</span>
+      <input id="f-span-max" type="number" step="1" placeholder="max">
+    </div>
+  </div>
+  <div class="ctrl"><label>Chr</label>
+    <button class="chip" id="f-std-chr" title="Hide variants on non-standard chromosomes (chrUn, *_random, *_alt, decoy, etc.)">Standard only</button>
+  </div>
+  <div class="ctrl"><label>Rows/pg</label>
+    <select id="f-page-size"><option value="50">50</option><option value="100" selected>100</option><option value="250">250</option><option value="500">500</option><option value="1000">1k</option></select>
+  </div>
+  <button class="btn-ghost btn" id="reset-btn" style="margin-left:auto">Reset</button>
+</div>
+
+<div id="chip-bar" class="controls" style="display:none"></div>
+
+<div class="stats-bar" id="stats-bar" style="display:none">
+  <span>Rows: <span class="sv" id="s-total">0</span></span>
+  <span>Shown: <span class="sv" id="s-shown">0</span></span>
+  <span>PASS: <span class="sv" id="s-pass">0</span></span>
+  <span>Somatic: <span class="sv" id="s-somatic">0</span></span>
+  <span>Germline: <span class="sv" id="s-germline">0</span></span>
+  <span>INDEL: <span class="sv" id="s-indel">0</span></span>
+  <span>SV: <span class="sv" id="s-sv">0</span></span>
+</div>
+
+<div class="charts-row" id="charts-row" style="display:none">
+  <div class="chart-card"><div class="ct"><span>Somlod</span><button class="log-tog" data-chart="somlod" title="Toggle symmetric log10 x-axis">log10</button></div><canvas id="c-somlod"></canvas></div>
+  <div class="chart-card"><div class="ct"><span>Maxlod</span><button class="log-tog" data-chart="maxlod" title="Toggle symmetric log10 x-axis">log10</button></div><canvas id="c-maxlod"></canvas></div>
+  <div class="chart-card"><div class="ct"><span>Span (log10)</span></div><canvas id="c-span"></canvas></div>
+</div>
+
+<div class="table-wrap" id="table-wrap" style="display:none;max-height:calc(100vh - 380px)">
+  <table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table>
+</div>
+<div class="pagination" id="pagination" style="display:none">
+  <span id="pg-info">-</span>
+  <div class="pg-btns">
+    <button class="btn-ghost btn" id="pg-first">&laquo;</button>
+    <button class="btn-ghost btn" id="pg-prev">&lsaquo; Prev</button>
+    <button class="btn-ghost btn" id="pg-next">Next &rsaquo;</button>
+    <button class="btn-ghost btn" id="pg-last">&raquo;</button>
+  </div>
+</div>
+
+<div class="detail-panel" id="detail-panel" style="display:none">
+  <div class="dp-header">
+    <span>Selected row detail</span>
+    <strong id="dp-locus">-</strong>
+  </div>
+  <div class="format-key">FORMAT (per-sample): <code>GT:AD:DP:SR:DR:GQ:PL:LO:LO_n</code> &mdash; SV uses DR=disc, INDEL uses DR=cigar. For per-read alignment re-plots, use the standalone <code>r2c_explorer.html</code>.</div>
+  <div class="dp-body" id="dp-body"><div class="dp-empty">Click a table row</div></div>
+</div>
+
+<div id="gt-legend" role="dialog" aria-label="Genotype and FORMAT field legend">
+  <span class="close" id="gt-legend-close" title="Close">&times;</span>
+  <h4>Genotype (GT)</h4>
+  <div class="row"><span class="k">0/0</span><span class="v">homozygous reference (no alt allele)</span></div>
+  <div class="row"><span class="k">0/1</span><span class="v">heterozygous (one alt allele)</span></div>
+  <div class="row"><span class="k">1/1</span><span class="v">homozygous alt (both alleles are alt)</span></div>
+  <div class="row"><span class="k">./.</span><span class="v">no call / insufficient coverage</span></div>
+  <hr>
+  <h4>Per-sample FORMAT fields <code style="color:var(--accent);font-size:.68rem">GT:AD:DP:SR:DR:GQ:PL:LO:LO_n</code></h4>
+  <div class="row"><span class="k">AD</span><span class="v">allelic depth (# reads supporting the alt allele)</span></div>
+  <div class="row"><span class="k">DP</span><span class="v">total read depth at this site</span></div>
+  <div class="row"><span class="k">SR</span><span class="v">split-read support (reads spanning the breakpoint)</span></div>
+  <div class="row"><span class="k">DR</span><span class="v">discordant-pair support for SVs; CIGAR-indel support for INDELs</span></div>
+  <div class="row"><span class="k">GQ</span><span class="v">genotype quality (Phred)</span></div>
+  <div class="row"><span class="k">PL</span><span class="v">Phred-scaled genotype likelihoods (0/0, 0/1, 1/1)</span></div>
+  <div class="row"><span class="k">LO</span><span class="v">log-odds variant vs. error at this sample (see CLAUDE.md)</span></div>
+  <div class="row"><span class="k">LO_n</span><span class="v">log-odds variant vs. error, normal-model only</span></div>
+  <hr>
+  <div class="row"><span class="k" style="color:var(--text2)">Tip</span><span class="v">Click outside this box or press <kbd style="background:var(--surface2);padding:1px 5px;border-radius:3px;border:1px solid var(--border)">Esc</kbd> to dismiss</span></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* === Column defs === */
+const LEGACY=[
+  "chr1","pos1","strand1","chr2","pos2","strand2","ref","alt_allele",
+  "span","split","alt_count","cov","cigar","cigar_near",
+  "dmq1","dmq2","dcn","dct","mapq1","mapq2","nm1","nm2","as1","as2","sub1","sub2",
+  "homol","insert","repeat","contig_and_region","naln","conf","evidence","qual","secondary",
+  "somatic","somlod","maxlod","dbsnp","contig_conf1","contig_conf2"];
+const V2=["cpos1","cpos2","lmatch","rmatch","scov1","scov2","local1","local2","ctglen","flipped"];
+// SvABA2.0 v3: +1 trailing core column. bp_id is a thread-unique BP
+// identifier of the form "bpTTTNNNNNNNN" (see BreakPoint::id in
+// src/svaba/BreakPoint.h). Used to cross-reference to the r2c file's
+// split_bps / disc_bps columns.
+const V3=["bp_id"];
+const NUM=new Set(["pos1","pos2","span","split","alt_count","cov","cigar","cigar_near","dmq1","dmq2","dcn","dct","mapq1","mapq2","nm1","nm2","as1","as2","sub1","sub2","naln","qual","secondary","somlod","maxlod","cpos1","cpos2","lmatch","rmatch","scov1","scov2","ctglen"]);
+
+const TCOLS=[
+  // bp_id pinned to the leftmost column — it's the primary join key back
+  // to r2c.txt.gz / the bi:Z BAM tag, so keeping it in a fixed, easy-to-
+  // find position matters more than adjacency to other variant metadata.
+  {k:"bp_id",l:"bp_id",w:"tiny"},
+  {k:"igvPos1",l:"IGV1",w:"loc"},{k:"strand1",l:"S1",w:"strand"},
+  {k:"igvPos2",l:"IGV2",w:"loc"},{k:"strand2",l:"S2",w:"strand"},
+  // span sits next to the pos2/strand2 pair since it's a property of
+  // the chr1:pos1 → chr2:pos2 interval; easier to scan the "where"
+  // columns all at once before moving on to quality/support metrics.
+  {k:"span",l:"Span",n:1,w:"num"},
+  // Genes column — populated only when the user has loaded a GTF.
+  // Shows the comma-joined union of any gene whose EXON(S) overlap
+  // pos1 OR pos2. Stays adjacent to the locus block so the biological
+  // context is visually anchored to where the breakpoint is.
+  {k:"genes",l:"Genes",w:"genes"},
+  {k:"eventType",l:"Type",w:"tiny"},{k:"evidence",l:"Evid",w:"tiny"},{k:"conf",l:"Conf",w:"tiny"},
+  {k:"qual",l:"Qual",n:1,w:"num"},{k:"somlod",l:"Somlod",n:1,w:"num"},{k:"maxlod",l:"Maxlod",n:1,w:"num"},
+  {k:"gtSummary",l:"Samples \u24d8",w:"gt",help:true},
+  {k:"split",l:"Split",n:1,w:"num"},{k:"alt_count",l:"Alt",n:1,w:"num"},{k:"cigar",l:"Cigar",n:1,w:"num"},
+  {k:"dcn",l:"DCn",n:1,w:"num"},{k:"dct",l:"DCt",n:1,w:"num"},{k:"cov",l:"Cov",n:1,w:"num"},
+  {k:"somatic",l:"Somatic",w:"tiny"},
+  {k:"ref",l:"Ref",w:"seq"},{k:"alt_allele",l:"Alt",w:"seq"},
+  {k:"mapq1",l:"MQ1",n:1,w:"num"},{k:"mapq2",l:"MQ2",n:1,w:"num"},
+  {k:"dbsnp",l:"Dbsnp",w:"tiny"},
+  {k:"contig_and_region",l:"Contig",w:"wrap"}
+];
+
+/* === State === */
+const S={fn:"",hdr:[],sampHdr:[],coreCnt:0,rows:[],filt:[],selId:null,
+  pg:1,pgSz:100,sort:{k:"maxlod",d:"desc"},
+  logScale:{somlod:false,maxlod:false},
+  f:{search:"",region:null,somlodMin:null,somlodMax:null,maxlodMin:null,maxlodMax:null,
+     qualMin:null,splitMin:null,altMin:null,spanMin:null,spanMax:null,stdChrOnly:false,
+     eventTypes:new Set(),evidence:new Set(),confidence:new Set(),somatic:new Set()}};
+
+/* === DOM === */
+const $=id=>document.getElementById(id);
+
+/* === Init table header === */
+TCOLS.forEach(c=>{
+  const th=document.createElement("th"); th.dataset.k=c.k;
+  if(c.w) th.classList.add("w-"+c.w);
+  if(c.help) th.classList.add("gt-head");
+  th.innerHTML=esc(c.l)+'<span class="sa"></span>';
+  th.onclick=e=>{
+    // GT header: clicking opens the legend instead of sorting.
+    if(c.help){e.stopPropagation();showGtLegend(th);return}
+    toggleSort(c.k);render();
+  };
+  $("thead").appendChild(th);
+});
+
+/* === Events === */
+$("file-input").onchange=e=>{const f=e.target.files[0];if(f)loadBlob(f,f.name)};
+["dragenter","dragover"].forEach(e=>$("drop-zone").addEventListener(e,ev=>{ev.preventDefault();$("drop-zone").classList.add("over")}));
+["dragleave","drop"].forEach(e=>$("drop-zone").addEventListener(e,ev=>{ev.preventDefault();$("drop-zone").classList.remove("over")}));
+$("drop-zone").addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f)loadBlob(f,f.name)});
+
+// GTF upload box — optional; enables the Genes column once a GTF is
+// loaded. Mirrors the bps drop-zone wiring so the UX is identical.
+$("gtf-input").onchange=e=>{const f=e.target.files[0];if(f)loadGtfBlob(f,f.name)};
+["dragenter","dragover"].forEach(e=>$("gtf-zone").addEventListener(e,ev=>{ev.preventDefault();$("gtf-zone").classList.add("over")}));
+["dragleave","drop"].forEach(e=>$("gtf-zone").addEventListener(e,ev=>{ev.preventDefault();$("gtf-zone").classList.remove("over")}));
+$("gtf-zone").addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f)loadGtfBlob(f,f.name)});
+
+$("export-btn").onclick=exportTSV;
+$("reset-btn").onclick=()=>{resetF();render()};
+$("pg-prev").onclick=()=>{if(S.pg>1){S.pg--;rTable()}};
+$("pg-next").onclick=()=>{if(S.pg<tPages()){S.pg++;rTable()}};
+$("pg-first").onclick=()=>{S.pg=1;rTable()};
+$("pg-last").onclick=()=>{S.pg=tPages();rTable()};
+document.querySelectorAll(".preset").forEach(b=>{
+  b.onclick=()=>{$(b.dataset.t).value=b.dataset.v;syncF();render()};
+});
+["f-search","f-region","f-somlod-min","f-somlod-max","f-maxlod-min","f-maxlod-max",
+ "f-qual-min","f-split-min","f-alt-min","f-span-min","f-span-max","f-page-size"
+].forEach(id=>{
+  $(id).addEventListener("input",()=>{syncF();render()});
+});
+$("f-std-chr").onclick=()=>{
+  S.f.stdChrOnly=!S.f.stdChrOnly;
+  $("f-std-chr").classList.toggle("on",S.f.stdChrOnly);
+  S.pg=1;render();
+};
+document.querySelectorAll(".log-tog").forEach(b=>{
+  b.onclick=()=>{
+    const c=b.dataset.chart;
+    S.logScale[c]=!S.logScale[c];
+    b.classList.toggle("on",S.logScale[c]);
+    rCharts();
+  };
+});
+
+/* === GT legend popover === */
+function showGtLegend(anchorEl){
+  const leg=$("gt-legend");
+  leg.classList.add("on");
+  // Position below the anchor, clamped to viewport so it never clips.
+  const r=anchorEl.getBoundingClientRect();
+  const vw=window.innerWidth,vh=window.innerHeight;
+  // Measure after display; offscreen-measure via opacity:0 trick isn't needed
+  // because we set display:block first.
+  const lw=leg.offsetWidth,lh=leg.offsetHeight;
+  let x=r.left, y=r.bottom+4;
+  if(x+lw>vw-8) x=Math.max(8,vw-lw-8);
+  if(y+lh>vh-8) y=Math.max(8,r.top-lh-4);
+  leg.style.left=x+"px";
+  leg.style.top=y+"px";
+}
+function hideGtLegend(){$("gt-legend").classList.remove("on")}
+$("gt-legend-close").onclick=e=>{e.stopPropagation();hideGtLegend()};
+document.addEventListener("click",e=>{
+  const leg=$("gt-legend");
+  if(!leg.classList.contains("on"))return;
+  if(e.target.closest("#gt-legend"))return;
+  if(e.target.closest(".gt-cell")||e.target.closest(".gt-head"))return;
+  hideGtLegend();
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")hideGtLegend()});
+
+/* === File load === */
+async function loadBlob(blob,name){
+  $("file-meta").textContent="Loading "+name+"...";
+  try{
+    let text;
+    if(name.endsWith(".gz")){
+      if(typeof DecompressionStream==="undefined") throw new Error("Browser lacks DecompressionStream");
+      text=await new Response(blob.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    } else text=await blob.text();
+    ingest(text,name);
+  }catch(e){$("file-meta").textContent="Error: "+e.message;console.error(e)}
+  $("file-input").value="";
+}
+
+/* === Auto-load on page open ===========================================
+ * Two paths:
+ *   1. ?file=path/to/x.bps.txt.gz  — explicit override
+ *   2. <dir>/manifest.json (default dir=svaba) — list of bps files; we load
+ *      the first entry. Works on GitHub Pages where directory indexes aren't
+ *      served. Both paths are resolved relative to the page URL.
+ * Skipped under file:// because fetch from a local file URL is blocked.
+ */
+async function tryHttpAutoLoad(){
+  if (location.protocol === "file:") return;
+  const params = new URLSearchParams(location.search);
+  const file = params.get("file");
+  if (file) {
+    try {
+      const r = await fetch(file);
+      if (r.ok) {
+        const blob = await r.blob();
+        const name = file.split("/").pop();
+        await loadBlob(new File([blob], name), name);
+        return;
+      }
+    } catch (_) {}
+  }
+  const dir = (params.get("dir") || "svaba").replace(/\/+$/,"") + "/";
+  try {
+    const m = await fetch(dir + "manifest.json");
+    if (!m.ok) return;
+    const mj = await m.json();
+    const list = (Array.isArray(mj) ? mj : (mj.files || []))
+                   .filter(n => /\.(bps|txt)(\.gz)?$/i.test(n));
+    if (!list.length) return;
+    const r = await fetch(dir + list[0]);
+    if (r.ok) {
+      const blob = await r.blob();
+      await loadBlob(new File([blob], list[0]), list[0]);
+    }
+  } catch (_) {}
+}
+
+/* === Gene annotation load (BED or GTF) =================================
+ *
+ * User uploads a BED / BED.gz or GTF / GTF.gz; we build a per-chromosome
+ * sorted index of {start, end, gene_name}. For BED we take cols 1-3 as
+ * the interval and col 4 as the gene name (0-based BED coords converted
+ * to 1-based internally). For GTF we parse EXON features only and pull
+ * gene_name from the attributes column.
+ *
+ * When the bps file is (re)loaded or the annotation changes, every row
+ * gets annotated with the comma-joined union of gene names whose intervals
+ * overlap pos1 OR pos2.
+ *
+ * Index shape per chrom (normalized via normC, i.e. "chr1" and "1"
+ * collapse to the same key):
+ *   { starts:[], ends:[], genes:[], maxEnd:[] }
+ * where maxEnd[i] is the running max of ends[0..i], enabling a bounded
+ * walk-back during lookup: once maxEnd[j] < pos we can stop — no
+ * earlier interval can still contain pos.
+ *
+ * Lookup: binary-search starts for largest index with start<=pos, then
+ * walk back checking end>=pos; bail when maxEnd falls below pos.
+ *
+ * BED is recommended over GTF — it's 10-50x smaller and parses in
+ * milliseconds. A typical GENCODE genes.bed is ~2 MB vs ~1.5 GB for the
+ * full GTF.
+ */
+const GTF = {
+  byChr: new Map(),     // normC(chrom) -> {starts,ends,genes,maxEnd}
+  nExons: 0,
+  loaded: false,
+  fn: ""
+};
+
+async function loadGtfBlob(blob, name) {
+  $("gtf-name").style.display = "";
+  $("gtf-name").textContent = "Loading " + name + "...";
+  try {
+    let text;
+    if (name.endsWith(".gz")) {
+      if (typeof DecompressionStream === "undefined") throw new Error("Browser lacks DecompressionStream");
+      text = await new Response(blob.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    } else text = await blob.text();
+
+    // Auto-detect format by filename (strip .gz first)
+    const base = name.replace(/\.gz$/i, "").toLowerCase();
+    if (base.endsWith(".bed")) parseBed(text, name);
+    else parseGtf(text, name);
+
+    annotateAllRowsWithGenes();
+    render();
+  } catch (e) {
+    $("gtf-name").textContent = "Error: " + e.message;
+    console.error(e);
+  }
+  $("gtf-input").value = "";
+}
+
+function parseBed(text, name) {
+  const t0 = performance.now();
+  const buckets = new Map();
+  const geneIntern = new Map();
+  let nRegions = 0;
+
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || line.charCodeAt(0) === 35 /* # */) continue;
+    // skip browser/track header lines
+    if (line.startsWith("browser ") || line.startsWith("track ")) continue;
+    const tabs = line.split("\t");
+    if (tabs.length < 4) continue;  // need at least chr, start, end, name
+
+    const chr = normC(tabs[0]);
+    const s = +tabs[1] + 1;  // BED is 0-based half-open → convert to 1-based
+    const e = +tabs[2];      // end is already the 1-based inclusive position
+    if (!isFinite(s) || !isFinite(e)) continue;
+
+    let gene = tabs[3].trim();
+    if (!gene) continue;
+    const cached = geneIntern.get(gene);
+    if (cached) gene = cached; else geneIntern.set(gene, gene);
+
+    let buf = buckets.get(chr);
+    if (!buf) { buf = []; buckets.set(chr, buf); }
+    buf.push([s, e, gene]);
+    nRegions++;
+  }
+
+  // Sort per-chrom by start, then flatten into parallel arrays + maxEnd.
+  const byChr = new Map();
+  for (const [chr, buf] of buckets) {
+    buf.sort((a, b) => a[0] - b[0]);
+    const n = buf.length;
+    const starts = new Int32Array(n);
+    const ends   = new Int32Array(n);
+    const genes  = new Array(n);
+    const maxEnd = new Int32Array(n);
+    let running = 0;
+    for (let i = 0; i < n; i++) {
+      starts[i] = buf[i][0];
+      ends[i]   = buf[i][1];
+      genes[i]  = buf[i][2];
+      if (buf[i][1] > running) running = buf[i][1];
+      maxEnd[i] = running;
+    }
+    byChr.set(chr, { starts, ends, genes, maxEnd });
+  }
+
+  GTF.byChr  = byChr;
+  GTF.nExons = nRegions;
+  GTF.loaded = nRegions > 0;
+  GTF.fn     = name;
+
+  const ms = (performance.now() - t0).toFixed(0);
+  $("gtf-zone").classList.add("loaded");
+  $("gtf-name").textContent =
+    name + " — " + nRegions.toLocaleString() + " regions across " +
+    byChr.size + " chromosomes (parsed in " + ms + "ms)";
+}
+
+function parseGtf(text, name) {
+  const t0 = performance.now();
+
+  // Accumulate into per-chrom temp buckets of [start, end, gene] triples,
+  // then sort + split into parallel arrays at the end. gene-name strings
+  // are de-duplicated via a Map so each unique symbol lives once in memory.
+  const buckets = new Map();   // chrom_key -> [[s,e,gene], ...]
+  const geneIntern = new Map();
+
+  const nameRe  = /gene_name "([^"]+)"/;
+  const idRe    = /gene_id "([^"]+)"/;
+
+  let nLines = 0, nExons = 0;
+  // Split on \n; tolerate \r\n. split() here works fine for multi-hundred-MB
+  // strings as long as the browser had enough heap to hold the uncompressed
+  // GTF in the first place (GENCODE basic ≈ 1.5 GB is the real constraint,
+  // not this split).
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    nLines++;
+    if (!line || line.charCodeAt(0) === 35 /* # */) continue;
+    const tabs = line.split("\t");
+    if (tabs.length < 9) continue;
+    if (tabs[2] !== "exon") continue;
+
+    const chr = normC(tabs[0]);
+    const s = +tabs[3];
+    const e = +tabs[4];
+    if (!isFinite(s) || !isFinite(e)) continue;
+
+    const attrs = tabs[8];
+    let m = nameRe.exec(attrs);
+    if (!m) m = idRe.exec(attrs);   // fall back to gene_id when gene_name absent
+    if (!m) continue;
+    let gene = m[1];
+    const cached = geneIntern.get(gene);
+    if (cached) gene = cached; else geneIntern.set(gene, gene);
+
+    let buf = buckets.get(chr);
+    if (!buf) { buf = []; buckets.set(chr, buf); }
+    buf.push([s, e, gene]);
+    nExons++;
+  }
+
+  // Sort per-chrom by start, then flatten into parallel arrays + maxEnd.
+  const byChr = new Map();
+  for (const [chr, buf] of buckets) {
+    buf.sort((a, b) => a[0] - b[0]);
+    const n = buf.length;
+    const starts = new Int32Array(n);
+    const ends   = new Int32Array(n);
+    const genes  = new Array(n);
+    const maxEnd = new Int32Array(n);
+    let running = 0;
+    for (let i = 0; i < n; i++) {
+      starts[i] = buf[i][0];
+      ends[i]   = buf[i][1];
+      genes[i]  = buf[i][2];
+      if (buf[i][1] > running) running = buf[i][1];
+      maxEnd[i] = running;
+    }
+    byChr.set(chr, { starts, ends, genes, maxEnd });
+  }
+
+  GTF.byChr  = byChr;
+  GTF.nExons = nExons;
+  GTF.loaded = nExons > 0;
+  GTF.fn     = name;
+
+  const ms = (performance.now() - t0).toFixed(0);
+  $("gtf-zone").classList.add("loaded");
+  $("gtf-name").textContent =
+    name + " — " + nExons.toLocaleString() + " exons across " +
+    byChr.size + " chromosomes (parsed in " + ms + "ms)";
+}
+
+// Binary search: largest index i such that arr[i] <= target, or -1.
+function _upperBoundLE(arr, target) {
+  let lo = 0, hi = arr.length - 1, ret = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] <= target) { ret = mid; lo = mid + 1; }
+    else                     { hi = mid - 1; }
+  }
+  return ret;
+}
+
+// Find all genes whose EXONS overlap a given 1-based position. Returns
+// a Set of strings (possibly empty). Cheap: O(log n + k) where k is the
+// number of exons at the locus (typically 0..3).
+function genesAtPos(chr, pos) {
+  const out = new Set();
+  if (!GTF.loaded || chr == null || pos == null || !isFinite(+pos)) return out;
+  const idx = GTF.byChr.get(normC(chr));
+  if (!idx) return out;
+  const { starts, ends, genes, maxEnd } = idx;
+  const p = +pos;
+  const hi = _upperBoundLE(starts, p);
+  if (hi < 0) return out;
+  for (let i = hi; i >= 0; i--) {
+    if (ends[i] >= p) out.add(genes[i]);
+    if (maxEnd[i] < p) break;   // no earlier exon can still reach p
+  }
+  return out;
+}
+
+// Stamp `r.genes` onto every loaded bps row with the comma-joined union
+// of genes at pos1 and pos2. Called after GTF load and after bps load
+// (if a GTF was already loaded). Empty string when the GTF isn't loaded
+// yet so the column renders blank until there's data to show.
+function annotateAllRowsWithGenes() {
+  if (!S.rows || !S.rows.length) return;
+  for (const r of S.rows) {
+    const set = new Set();
+    if (GTF.loaded) {
+      for (const g of genesAtPos(r.chr1, r.pos1)) set.add(g);
+      for (const g of genesAtPos(r.chr2, r.pos2)) set.add(g);
+    }
+    r.genes = set.size ? Array.from(set).sort().join(", ") : "";
+    // Keep search corpus in sync so users can grep by gene name.
+    if (r._st && r.genes) r._st = r._st.concat([r.genes]);
+  }
+}
+
+function ingest(text,name){
+  const t0=performance.now();
+  const lines=text.replace(/\r\n?/g,"\n").split("\n").filter(l=>l);
+  if(lines.length<2)throw new Error("Need header + rows");
+  const hdr=lines[0].split("\t");
+
+  // detect core col count. Three possible shapes:
+  //   LEGACY (41 cols)
+  //   V2     (51 cols = LEGACY + 10 refilter cols)
+  //   V3     (52 cols = V2 + bp_id)
+  // We snap `cc` down to the largest known shape that fits. Anything
+  // between two known sizes is treated as the smaller one (safer —
+  // extra unnamed columns just get ignored in the detail panel).
+  let cc=hdr.length;
+  for(let i=34;i<hdr.length;i++){if(/^[tn]\d+_/.test(hdr[i])){cc=i;break}}
+  const LEG_N = LEGACY.length;              // 41
+  const V2_N  = LEG_N + V2.length;          // 51
+  const V3_N  = V2_N  + V3.length;          // 52
+  let coreCols;
+  if      (cc >= V3_N) { cc = V3_N; coreCols = LEGACY.concat(V2).concat(V3); }
+  else if (cc >= V2_N) { cc = V2_N; coreCols = LEGACY.concat(V2); }
+  else                 { cc = LEG_N; coreCols = LEGACY; }
+  const isV2 = cc >= V2_N;   // kept for any downstream code that still reads it
+  const sampHdr=hdr.slice(cc);
+
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const c=lines[i].split("\t");
+    if(c.length!==hdr.length)continue;
+    rows.push(mkRow(rows.length,c,coreCols,sampHdr,cc));
+  }
+
+  S.fn=name;S.hdr=hdr;S.sampHdr=sampHdr;S.coreCnt=cc;S.rows=rows;
+  resetF();S.selId=rows.length?rows[0].id:null;S.sort={k:"maxlod",d:"desc"};
+
+  ["controls","chip-bar","stats-bar","charts-row","table-wrap","pagination","detail-panel"].forEach(id=>{$(id).style.display=""});
+  $("drop-zone").classList.add("loaded");
+  $("file-name").style.display="";$("file-name").textContent=name;
+  const ms=(performance.now()-t0).toFixed(0);
+  $("file-meta").textContent=name+" \u2014 "+rows.length.toLocaleString()+" rows, "+
+    (isV2?51:41)+" core cols, "+sampHdr.length+" samples \u2014 parsed in "+ms+"ms";
+  // If the user has already loaded a GTF, annotate every row we just
+  // parsed so the Genes column renders populated on first view.
+  annotateAllRowsWithGenes();
+  render();
+}
+
+function mkRow(id,cells,coreCols,sampHdr,cc){
+  const r={id,_c:cells};
+  coreCols.forEach((f,i)=>{r[f]=NUM.has(f)?mNum(cells[i]):cells[i]});
+  r.chr1=stripH(r.chr1);r.chr2=stripH(r.chr2);
+  r.eventType=evType(r);
+  r.spanAbs=(r.span==null||r.span===-1)?Infinity:Math.abs(r.span);
+  r.igvPos1=igvLoc(r.chr1,r.pos1);
+  r.igvPos2=igvLoc(r.chr2,r.pos2);
+  r.samp=sampHdr.map((h,j)=>parseSamp(h,cells[cc+j],r.evidence));
+  // Full per-sample FORMAT-value dump for the "Samples" column. One line
+  // per sample, prefixed with the sample-label's first char (e.g. "t" or
+  // "n" for a typical tumor/normal run). The payload is the raw colon-
+  // separated value verbatim from the bps.txt row, i.e.
+  //   GT:AD:DP:SR:DR:GQ:PL:LO:LO_n
+  // — so the cell holds the complete per-BAM state for each sample,
+  // not just the genotype. Newlines are preserved by the cell's CSS
+  // (white-space:pre on .w-gt) so colon-separated fields stack
+  // visually. Click the cell to open the GT + FORMAT legend popover.
+  r.gtSummary=r.samp.map(s=>{
+    const pref=(s.lbl||"?").charAt(0)||"?";
+    const body=(s.raw&&s.raw.length)?s.raw:(s.gt||"./.");
+    return pref+": "+body;
+  }).join("\n");
+  r._st=[r.chr1,r.pos1,r.chr2,r.pos2,r.eventType,r.evidence,r.conf,r.ref,r.alt_allele,
+    r.contig_and_region,r.insert,r.repeat,r.homol,r.dbsnp,r.somatic]
+    .concat(r.samp.map(s=>s.lbl+" "+s.raw)).join(" ").toLowerCase();
+  return r;
+}
+
+function evType(r){
+  if(r.evidence==="INDEL"){const rl=(r.ref||"").length,al=(r.alt_allele||"").length;return al>rl?"Ins":al<rl?"Del":"Sub"}
+  if(r.chr1!==r.chr2)return "TRA";
+  if(r.strand1===r.strand2)return "INV";
+  if(r.strand1==="-"&&r.strand2==="+")return "DUP";
+  if(r.strand1==="+"&&r.strand2==="-")return "DEL";
+  return "BND";
+}
+
+function parseSamp(h,raw,ev){
+  const lbl=h.split("_")[0],p=(raw||"").split(":");
+  return{lbl,hdr:h,raw,gt:p[0]||"",ad:mNum(p[1]),dp:mNum(p[2]),sr:mNum(p[3]),
+    dr:mNum(p[4]),drLbl:ev==="INDEL"?"cigar":"disc",gq:mNum(p[5]),pl:p[6]||"",lo:mNum(p[7]),lo_n:mNum(p[8])};
+}
+
+/* === Filters === */
+function resetF(){
+  S.f={search:"",region:null,somlodMin:null,somlodMax:null,maxlodMin:null,maxlodMax:null,
+    qualMin:null,splitMin:null,altMin:null,spanMin:null,spanMax:null,stdChrOnly:false,
+    eventTypes:new Set(),evidence:new Set(),confidence:new Set(),somatic:new Set()};
+  S.pg=1;S.pgSz=100;
+  ["f-search","f-region","f-somlod-min","f-somlod-max","f-maxlod-min","f-maxlod-max",
+   "f-qual-min","f-split-min","f-alt-min","f-span-min","f-span-max"].forEach(id=>{$(id).value=""});
+  $("f-page-size").value="100";
+  const sc=$("f-std-chr");if(sc)sc.classList.remove("on");
+}
+
+function syncF(){
+  S.f.search=$("f-search").value.trim().toLowerCase();
+  S.f.region=parseReg($("f-region").value.trim());
+  S.f.somlodMin=nNum($("f-somlod-min").value);S.f.somlodMax=nNum($("f-somlod-max").value);
+  S.f.maxlodMin=nNum($("f-maxlod-min").value);S.f.maxlodMax=nNum($("f-maxlod-max").value);
+  S.f.qualMin=nNum($("f-qual-min").value);S.f.splitMin=nNum($("f-split-min").value);
+  S.f.altMin=nNum($("f-alt-min").value);
+  S.f.spanMin=nNum($("f-span-min").value);S.f.spanMax=nNum($("f-span-max").value);
+  S.pgSz=Number($("f-page-size").value)||100;S.pg=1;
+}
+
+function parseReg(s){
+  if(!s)return null;
+  const m=s.replace(/,/g,"").replace(/[Mm]/g,e=>e==='M'||e==='m'?'000000':'').match(/^(chr)?(\w+?)(?::(\d+)(?:-(\d+))?)?$/i);
+  if(!m)return null;
+  return{chr:m[2],start:m[3]?+m[3]:null,end:m[4]?+m[4]:null};
+}
+
+function regMatch(r,reg){
+  if(!reg)return true;
+  const rc=normC(reg.chr);
+  const test=(c,p)=>{if(normC(c)!==rc)return false;if(reg.start!=null&&p<reg.start)return false;if(reg.end!=null&&p>reg.end)return false;return true};
+  return test(r.chr1,r.pos1)||test(r.chr2,r.pos2);
+}
+
+function doFilter(){
+  const f=S.f;
+  S.filt=S.rows.filter(r=>{
+    if(f.search&&!r._st.includes(f.search))return false;
+    if(f.region&&!regMatch(r,f.region))return false;
+    if(f.stdChrOnly&&(!isStdChr(r.chr1)||!isStdChr(r.chr2)))return false;
+    if(!nRng(r.somlod,f.somlodMin,f.somlodMax))return false;
+    if(!nRng(r.maxlod,f.maxlodMin,f.maxlodMax))return false;
+    if(!nMin(r.qual,f.qualMin))return false;
+    if(!nMin(r.split,f.splitMin))return false;
+    if(!nMin(r.alt_count,f.altMin))return false;
+    // span filter: only applies to finite spans; interchrom always passes unless spanMax set
+    if(f.spanMin!=null||f.spanMax!=null){
+      if(r.spanAbs===Infinity){if(f.spanMax!=null)return false}
+      else{if(f.spanMin!=null&&r.spanAbs<f.spanMin)return false;if(f.spanMax!=null&&r.spanAbs>f.spanMax)return false}
+    }
+    if(f.eventTypes.size&&!f.eventTypes.has(r.eventType))return false;
+    if(f.evidence.size&&!f.evidence.has(r.evidence))return false;
+    if(f.confidence.size&&!f.confidence.has(r.conf))return false;
+    if(f.somatic.size&&!f.somatic.has(r.somatic))return false;
+    return true;
+  });
+}
+
+/* === Sort === */
+function toggleSort(k){if(S.sort.k===k)S.sort.d=S.sort.d==="asc"?"desc":"asc";else{S.sort.k=k;S.sort.d=NUM.has(k)?"desc":"asc"}}
+function doSort(){
+  const d=S.sort.d==="asc"?1:-1,k=S.sort.k;
+  S.filt.sort((a,b)=>{
+    let av=a[k],bv=b[k];
+    if(typeof av==="number"||typeof bv==="number"){av=sn(av);bv=sn(bv);if(av!==bv)return(av-bv)*d}
+    else{const c=String(av||"").localeCompare(String(bv||""));if(c)return c*d}
+    return a.id-b.id;
+  });
+}
+
+/* === Render === */
+function render(){
+  doFilter();doSort();
+  if(!S.filt.some(r=>r.id===S.selId))S.selId=S.filt.length?S.filt[0].id:null;
+  rStats();rChips();rTable();rDetail();rCharts();
+  // sort arrows
+  document.querySelectorAll("#thead th").forEach(th=>{
+    const a=th.querySelector(".sa");
+    a.textContent=th.dataset.k===S.sort.k?(S.sort.d==="asc"?"\u25B2":"\u25BC"):"";
+  });
+}
+
+function tPages(){return Math.max(1,Math.ceil(S.filt.length/S.pgSz))}
+
+function rStats(){
+  $("s-total").textContent=S.rows.length.toLocaleString();
+  $("s-shown").textContent=S.filt.length.toLocaleString();
+  $("s-pass").textContent=S.filt.filter(r=>r.conf==="PASS").length.toLocaleString();
+  $("s-somatic").textContent=S.filt.filter(r=>r.somatic==="SOMATIC").length.toLocaleString();
+  $("s-germline").textContent=S.filt.filter(r=>r.somatic==="GERMLINE").length.toLocaleString();
+  $("s-indel").textContent=S.filt.filter(r=>r.evidence==="INDEL").length.toLocaleString();
+  $("s-sv").textContent=S.filt.filter(r=>r.evidence!=="INDEL").length.toLocaleString();
+  $("export-btn").disabled=!S.filt.length;
+}
+
+/* === Chips === */
+// Chip rendering: the full set of possible values comes from S.rows so the
+// user can toggle ON a filter for a value that's currently invisible; the
+// COUNT shown on each chip reflects S.filt (the post-filter view) so the
+// numbers stay live as other filters change. A value that currently has
+// 0 matches is still shown, just dimmed, so it remains clickable.
+function rChips(){
+  const bar=$("chip-bar");bar.innerHTML="";
+  [{k:"eventTypes",f:"eventType",l:"Type"},{k:"evidence",f:"evidence",l:"Evidence"},
+   {k:"confidence",f:"conf",l:"Conf"},{k:"somatic",f:"somatic",l:"Somatic"}].forEach(g=>{
+    const universe=cntBy(S.rows,g.f);if(!universe.size)return;
+    const filteredCnts=cntBy(S.filt,g.f);
+    const wrap=document.createElement("div");wrap.className="ctrl";
+    wrap.innerHTML='<label>'+esc(g.l)+'</label>';
+    const chips=document.createElement("div");chips.className="chips";
+    // Sort by filtered count desc, then by universe count desc as tiebreaker
+    // so empty-but-possible chips sink to the end but stay in a stable order.
+    Array.from(universe.entries()).sort((a,b)=>{
+      const fa=filteredCnts.get(a[0])||0, fb=filteredCnts.get(b[0])||0;
+      return fb-fa || b[1]-a[1];
+    }).forEach(([v,total])=>{
+      const n=filteredCnts.get(v)||0;
+      const c=document.createElement("button");
+      c.className="chip"+(S.f[g.k].has(v)?" on":"")+(n===0?" empty":"");
+      c.textContent=v+" ("+n.toLocaleString()+")";
+      c.title=n.toLocaleString()+" of "+total.toLocaleString()+" rows match this filter";
+      c.onclick=()=>{togSet(S.f[g.k],v);S.pg=1;render()};
+      chips.appendChild(c);
+    });
+    wrap.appendChild(chips);bar.appendChild(wrap);
+  });
+}
+
+/* === Table === */
+function rTable(){
+  const tp=tPages();if(S.pg>tp)S.pg=tp;
+  const s=(S.pg-1)*S.pgSz,e=s+S.pgSz,page=S.filt.slice(s,e);
+  if(!page.length){$("tbody").innerHTML='<tr><td colspan="'+TCOLS.length+'" style="padding:1rem;text-align:center;color:var(--text2)">No rows match</td></tr>'}
+  else{
+    const h=[];
+    for(const r of page){
+      h.push('<tr data-id="'+r.id+'"'+(r.id===S.selId?' class="sel"':'')+'>');
+      for(const c of TCOLS){
+        let v=r[c.k],cls=c.n?"num":"";
+        if(c.w) cls+=(cls?" ":"")+"w-"+c.w;
+        if(c.k==="conf")cls+=" "+(v==="PASS"?"pass":v==="LOWLOD"||v==="LOWMAPQ"?"lowlod":"nopass");
+        if(c.k==="strand1"||c.k==="strand2"){
+          cls+=" "+(v==="+"?"strand-plus":v==="-"?"strand-minus":"");
+          h.push('<td class="'+cls+'">'+esc(v||"-")+'</td>');
+          continue;
+        }
+        if(c.k==="gtSummary"){
+          const title="Click for genotype and FORMAT field explanations";
+          h.push('<td class="'+cls+' gt-cell" title="'+esc(title)+'">'+esc(v||"")+'</td>');
+          continue;
+        }
+        if(c.k==="igvPos1"||c.k==="igvPos2"){
+          if(v)h.push('<td class="'+cls+'"><a class="igv-link" href="#" data-locus="'+esc(v)+'" title="Click to navigate IGV (requires IGV running on port 60151)">'+esc(v)+'</a></td>');
+          else h.push('<td class="'+cls+'">-</td>');
+          continue;
+        }
+        if(c.k==="span")v=r.span===-1?"inter":fN(v);
+        else if(typeof v==="number")v=fN(v);
+        h.push('<td class="'+cls+'" title="'+esc(v||"")+'">'+esc(v)+'</td>');
+      }
+      h.push('</tr>');
+    }
+    $("tbody").innerHTML=h.join("");
+    $("tbody").querySelectorAll("tr[data-id]").forEach(tr=>{
+      tr.addEventListener("mousedown",e=>{tr._mdx=e.clientX;tr._mdy=e.clientY});
+      tr.onclick=e=>{
+        // don't steal the click if this was a drag-select gesture or user has a non-empty selection
+        const dx=e.clientX-(tr._mdx||e.clientX),dy=e.clientY-(tr._mdy||e.clientY);
+        if(Math.hypot(dx,dy)>4)return;
+        const sel=window.getSelection&&window.getSelection();
+        if(sel&&sel.toString().length>0)return;
+        // allow clicking the IGV link without selecting the row
+        if(e.target&&e.target.closest&&e.target.closest("a.igv-link"))return;
+        // GT cell: open legend popover, don't select the row
+        const gt=e.target&&e.target.closest&&e.target.closest("td.gt-cell");
+        if(gt){e.stopPropagation();showGtLegend(gt);return}
+        S.selId=+tr.dataset.id;rTable();rDetail();
+      };
+    });
+    $("tbody").querySelectorAll("a.igv-link").forEach(a=>{
+      a.addEventListener("click",e=>{
+        e.preventDefault();e.stopPropagation();
+        igvGoto(a.dataset.locus,a);
+      });
+    });
+  }
+  $("pg-info").textContent="Page "+S.pg+"/"+tp+" ("+S.filt.length.toLocaleString()+" rows)";
+  $("pg-prev").disabled=S.pg<=1;$("pg-first").disabled=S.pg<=1;
+  $("pg-next").disabled=S.pg>=tp;$("pg-last").disabled=S.pg>=tp;
+}
+
+/* === Detail === */
+function rDetail(){
+  const r=S.filt.find(x=>x.id===S.selId)||S.rows.find(x=>x.id===S.selId);
+  if(!r){$("dp-body").innerHTML='<div class="dp-empty">Click a row</div>';$("dp-locus").textContent="-";return}
+  $("dp-locus").textContent=r.chr1+":"+r.pos1+" "+r.strand1+" \u2192 "+r.chr2+":"+r.pos2+" "+r.strand2+" | "+r.eventType+" | "+r.evidence+" | "+r.conf;
+
+  // Same three-shape snap-down the parser uses; keeps the detail panel
+  // in sync with what the parser actually stored.
+  const _LEG=LEGACY.length, _V2=_LEG+V2.length, _V3=_V2+V3.length;
+  const allCols = S.coreCnt >= _V3 ? LEGACY.concat(V2).concat(V3)
+                : S.coreCnt >= _V2 ? LEGACY.concat(V2)
+                :                    LEGACY;
+  let h='<table class="kv">';
+  allCols.forEach((col,i)=>{
+    h+='<tr><td class="k">'+esc(col)+'</td><td class="v">'+esc(r._c[i])+'</td></tr>';
+  });
+  // sample cols
+  r.samp.forEach(s=>{
+    h+='<tr class="samp"><td class="k">'+esc(s.lbl)+' <span style="font-weight:400;font-size:.6rem">'+esc(s.hdr)+'</span></td>';
+    h+='<td class="v">GT='+esc(s.gt)+' AD='+fN(s.ad)+' DP='+fN(s.dp)+' SR='+fN(s.sr)+' '+s.drLbl+'='+fN(s.dr)+' GQ='+fN(s.gq)+' LO='+fN(s.lo)+' LO_n='+fN(s.lo_n)+'</td></tr>';
+  });
+  h+='</table>';
+  $("dp-body").innerHTML=h;
+}
+
+/* === Charts === */
+function rCharts(){
+  const som=S.filt.map(r=>r.somlod).filter(v=>v!=null&&isFinite(v));
+  const mx=S.filt.map(r=>r.maxlod).filter(v=>v!=null&&isFinite(v));
+  hist("c-somlod",S.logScale.somlod?som.map(symlog):som,"#6c8cff",S.logScale.somlod);
+  hist("c-maxlod",S.logScale.maxlod?mx.map(symlog):mx,"#4ade80",S.logScale.maxlod);
+  hist("c-span",S.filt.map(r=>r.spanAbs).filter(v=>v!=null&&isFinite(v)&&v>0).map(v=>Math.log10(v)),"#a855f7");
+  // Note: Type/Confidence/Chr charts were removed — their info is covered
+  // by the live chip filter bar (which now also shows filter-aware counts)
+  // and by the stats bar. bars() / chrCnt() are kept in the source for
+  // potential future reuse.
+}
+
+function hist(id,vals,color,isLog){
+  const cv=$(id),ctx=cv.getContext("2d"),dpr=devicePixelRatio||1;
+  const w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  if(!vals.length){ctx.fillStyle="#555";ctx.font="10px monospace";ctx.fillText("no data",w/2-18,h/2);return}
+  const nb=Math.min(40,Math.max(8,Math.ceil(Math.sqrt(vals.length))));
+  const mn=Math.min(...vals),mx=Math.max(...vals),rng=mx-mn||1,bw=rng/nb;
+  const bins=new Array(nb).fill(0);
+  for(const v of vals){let i=Math.floor((v-mn)/bw);if(i>=nb)i=nb-1;bins[i]++}
+  const mxB=Math.max(...bins);
+  const p={l:32,r:4,t:4,b:18},pw=w-p.l-p.r,ph=h-p.t-p.b;
+  ctx.fillStyle=color;ctx.globalAlpha=.7;
+  const bW=pw/nb;
+  for(let i=0;i<nb;i++){const bh=mxB>0?(bins[i]/mxB)*ph:0;ctx.fillRect(p.l+i*bW,p.t+ph-bh,Math.max(bW-.5,1),bh)}
+  ctx.globalAlpha=1;ctx.strokeStyle="#444";ctx.lineWidth=.5;
+  ctx.beginPath();ctx.moveTo(p.l,p.t);ctx.lineTo(p.l,p.t+ph);ctx.lineTo(p.l+pw,p.t+ph);ctx.stroke();
+  ctx.fillStyle="#777";ctx.font="9px monospace";ctx.textAlign="center";
+  for(let i=0;i<=3;i++){
+    const tv=mn+rng*i/3;
+    ctx.fillText(isLog?fmtSymlog(tv):tv.toFixed(1),p.l+pw*i/3,h-2);
+  }
+  if(isLog){ctx.textAlign="left";ctx.fillStyle="#6c8cff";ctx.fillText("symlog10",p.l+2,p.t+9)}
+  ctx.fillStyle="#777";ctx.textAlign="right";
+  for(let i=0;i<=2;i++)ctx.fillText(Math.round(mxB*i/2).toLocaleString(),p.l-2,p.t+ph-ph*i/2+3);
+}
+
+function bars(id,counts,color){
+  const cv=$(id),ctx=cv.getContext("2d"),dpr=devicePixelRatio||1;
+  const w=cv.clientWidth,h=cv.clientHeight;cv.width=w*dpr;cv.height=h*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const ent=Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]);
+  if(!ent.length){ctx.fillStyle="#555";ctx.font="10px monospace";ctx.fillText("no data",w/2-18,h/2);return}
+  const mx=ent[0][1],p={l:4,r:4,t:2,b:2},pw=w-p.l-p.r,ph=h-p.t-p.b;
+  const bH=Math.min(16,(ph-ent.length*2)/ent.length);
+  const tot=ent.length*(bH+2);const sy=p.t+Math.max(0,(ph-tot)/2);
+  ent.forEach(([lbl,n],i)=>{
+    const y=sy+i*(bH+2),bw=mx>0?(n/mx)*(pw-80):0;
+    ctx.fillStyle=color;ctx.globalAlpha=.65;ctx.fillRect(p.l+65,y,bw,bH);ctx.globalAlpha=1;
+    ctx.fillStyle="#aaa";ctx.font="9px monospace";ctx.textAlign="right";
+    ctx.fillText(lbl.length>9?lbl.slice(0,8)+"\u2026":lbl,p.l+62,y+bH-3);
+    ctx.textAlign="left";ctx.fillStyle="#777";ctx.fillText(n.toLocaleString(),p.l+65+bw+3,y+bH-3);
+  });
+}
+
+function chrCnt(rows){
+  const m=new Map(),ord=["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","X","Y"];
+  rows.forEach(r=>{const c=normC(r.chr1);m.set(c,(m.get(c)||0)+1)});
+  const s=new Map();ord.forEach(c=>{if(m.has(c))s.set(c,m.get(c))});
+  m.forEach((v,k)=>{if(!ord.includes(k))s.set(k,v)});return s;
+}
+
+/* === Export === */
+function exportTSV(){
+  if(!S.filt.length)return;
+  const lines=[S.hdr.join("\t")].concat(S.filt.map(r=>r._c.join("\t")));
+  const blob=new Blob([lines.join("\n")],{type:"text/tab-separated-values"});
+  const u=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=u;a.download=S.fn.replace(/\.gz$/i,"").replace(/\.txt$/i,"")+".filtered.tsv";
+  a.click();URL.revokeObjectURL(u);
+}
+
+/* === Util === */
+function mNum(s){if(!s||s==="NA"||s==="x"||s==="NOTSET")return null;const v=+s;return isFinite(v)?v:null}
+function nNum(s){if(s===""||s==null)return null;const v=+s;return isFinite(v)?v:null}
+function symlog(v){return Math.sign(v)*Math.log10(1+Math.abs(v))}
+function fmtSymlog(t){const v=Math.sign(t)*(Math.pow(10,Math.abs(t))-1);if(Math.abs(v)>=100)return v.toFixed(0);if(Math.abs(v)>=10)return v.toFixed(1);return v.toFixed(2)}
+function isStdChr(c){return /^([1-9]|1[0-9]|2[0-2]|x|y|m|mt)$/i.test(normC(c))}
+function igvLoc(chr,pos){
+  if(chr==null||chr===""||pos==null||pos===""||!isFinite(+pos))return "";
+  let c=String(chr).replace(/^#/,"");
+  if(!/^chr/i.test(c))c="chr"+c;
+  return c+":"+pos;
+}
+function igvGoto(locus,anchor){
+  if(!locus)return;
+  const url="http://localhost:60151/goto?locus="+encodeURIComponent(locus);
+  // IGV's port is CORS-less; use no-cors so the request fires even though we can't read the response.
+  fetch(url,{mode:"no-cors",cache:"no-store"})
+    .then(()=>{if(anchor){anchor.classList.remove("err");anchor.classList.add("ok");setTimeout(()=>anchor.classList.remove("ok"),600)}})
+    .catch(()=>{if(anchor){anchor.classList.add("err");setTimeout(()=>anchor.classList.remove("err"),1500)}});
+}
+function nRng(v,mn,mx){if(mn==null&&mx==null)return true;if(v==null||!isFinite(v))return false;if(mn!=null&&v<mn)return false;if(mx!=null&&v>mx)return false;return true}
+function nMin(v,mn){if(mn==null)return true;if(v==null||!isFinite(v))return false;return v>=mn}
+function sn(v){if(v===Infinity)return 9e15;if(v==null||Number.isNaN(v))return-9e15;return+v}
+function fN(v){if(v==null||v===Infinity)return"-";if(!isFinite(v))return String(v);return Math.abs(v)>=100||Number.isInteger(v)?v.toLocaleString():v.toFixed(3).replace(/\.?0+$/,"")}
+function stripH(s){return typeof s==="string"?s.replace(/^#/,""):s}
+function normC(s){return typeof s==="string"?s.replace(/^chr/i,"").toLowerCase():""}
+function cntBy(rows,k){const m=new Map();rows.forEach(r=>{const v=r[k];m.set(v,(m.get(v)||0)+1)});return m}
+function togSet(set,v){set.has(v)?set.delete(v):set.add(v)}
+function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+
+/* === Boot ============================================================
+ * Try to populate the explorer from svaba/manifest.json (or the ?file=
+ * URL param) on page open. Failures are silent — the manual upload box
+ * remains the fallback.
+ */
+tryHttpAutoLoad();
+
+})();
+</script>
+</body>
+</html>

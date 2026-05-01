@@ -50,12 +50,44 @@ folder picker.
 
 ## Regenerating the subsets
 
+The Python subsetter has three modes via `--preset`:
+
+| Preset       | Intent                                  | Key cutoffs                                                                        | Output suffix              |
+|--------------|-----------------------------------------|------------------------------------------------------------------------------------|----------------------------|
+| `strict`     | High-specificity nomination set         | qual≥200, mqm≥60, T-VAF≥0.15, T-AD≥10, N-VAF≤0.005, N-AD=0, SNVs only              | `.strict_subset.vcf`       |
+| `sensitive`  | Broad evidence net for rescue checks    | qual≥1, mqm≥30, T-VAF≥0.02, T-AD≥2, normal unrestricted, all variant types         | `.sensitive_subset.vcf`    |
+| `custom` (default) | Use individual `--min-*/--max-*` flags as set on the CLI | (whatever you pass)                                                          | `.somatic_subset.vcf`      |
+
+`strict ⊂ sensitive` by construction (looser cutoffs admit a superset). Each
+output VCF gets a `##sarek_subset_preset=…` header line so the explorer can
+auto-pair strict/sensitive partners.
+
+### Single-preset run (default cutoffs)
+
 ```bash
 python3 freebayes_somatic_subset.py --input-dir <raw-vcf-dir> -o docs/default \
-    --min-tumor-vaf 0.05 --max-normal-vaf 0.02 --qual 20  # default cutoffs
+    --min-tumor-vaf 0.05 --max-normal-vaf 0.02 --qual 20
 ```
 
-After regenerating, refresh `docs/default/manifest.json` so the explorer
+### Strict + sensitive pair (recommended for rescue mode)
+
+For each raw FreeBayes T/N VCF, produce both presets so the explorer can do
+asymmetric comparisons (nominate from A.strict, rescue against B.sensitive
+and vice-versa):
+
+```bash
+for vcf in *.freebayes.vcf; do
+  python3 freebayes_somatic_subset.py "$vcf" -o docs/default --preset strict
+  python3 freebayes_somatic_subset.py "$vcf" -o docs/default --preset sensitive
+done
+```
+
+Each input produces two outputs in `docs/default/`:
+`<stem>.strict_subset.vcf` and `<stem>.sensitive_subset.vcf`.
+
+### Refresh the manifest
+
+After regenerating, rebuild `docs/default/manifest.json` so the explorer
 auto-loads the new files:
 
 ```bash
@@ -69,6 +101,29 @@ json.dump({"name":"ucn1 default subsets",
           open(os.path.join(d, "manifest.json"), "w"), indent=2)
 PY
 ```
+
+## Rescue mode (asymmetric comparison)
+
+When comparing two samples A and B, the obvious-but-wrong question is "which
+strict calls in A also pass strict in B?" That penalises real-but-marginal
+variants in B that are buried under the strict cutoffs. The right question is:
+
+  *"Which calls strictly nominated in A have **at least some evidence** in B?"*
+
+This is the rescue: keep the high-specificity set as the nomination list, but
+check membership against a high-sensitivity set on the partner side. Set
+operations become asymmetric:
+
+  - `A only` = `A.strict − B.sensitive` (in A confidently, **no evidence at all** in B)
+  - `B only` = `B.strict − A.sensitive`
+  - `A ∩ B` = `(A.strict ∩ B.sensitive) ∪ (B.strict ∩ A.sensitive)` (confident in one side, evidence in the other)
+  - `A ∪ B` = `A.strict ∪ B.strict`
+
+In the explorer, click the "rescue mode" chip in the comparison panel. Two
+extra dropdowns appear for the sensitive partners; the **auto-pair** button
+matches each side with the same-tumor-sample file of the opposite preset
+(detected from the `##sarek_subset_preset=…` header), so if you've loaded a
+strict + sensitive pair per sample the partners populate themselves.
 
 ## Enabling GitHub Pages (one-time)
 

@@ -1,0 +1,7 @@
+{
+  "name": "ucn1 SvABA breakpoints",
+  "description": "SvABA tumor-vs-normal somatic breakpoint calls (.bps.txt.gz).",
+  "files": [
+    "a25.bps.sorted.dedup.pass.somatic.txt.gz"
+  ]
+}

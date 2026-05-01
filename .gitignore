@@ -26,3 +26,11 @@ work/
 # Don't track unintended .vcf.gz / .vcf at the repo root — only docs/default/ versions are served
 /*.vcf
 /*.vcf.gz
+
+# Sensitive subsets are large (broad evidence net, ~100k-300k variants per WGS sample).
+# We commit the gzipped (.vcf.gz) form because the uncompressed .vcf can exceed
+# GitHub's 100MB per-file hard limit. The explorer auto-decompresses .vcf.gz via
+# DecompressionStream, so the .gz copy is sufficient.
+docs/default/*.sensitive_subset.vcf
+# Editor backup files
+*~

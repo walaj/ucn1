@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeBayes Variant Explorer</title>
+<style>
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --surface2: #252833;
+  --border: #2e3140; --text: #e1e4ed; --text2: #8b8fa3;
+  --accent: #6c8cff; --green: #4ade80; --red: #f87171; --amber: #fbbf24;
+  --blue: #60a5fa; --purple: #a855f7;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg);color:var(--text);min-height:100vh;font-size:12px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;border-bottom:1px solid var(--border);background:var(--surface)}
+.header h1{font-size:1rem;font-weight:600} .header h1 span{color:var(--accent)}
+.header .meta{font-size:.75rem;color:var(--text2)}
+.container{padding:.6rem 1rem}
+
+/* Upload */
+.upload-row{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.upload-box{background:var(--surface2);border:2px dashed var(--border);border-radius:6px;padding:.6rem 1rem;cursor:pointer;transition:border-color .2s;font-size:.78rem;color:var(--text2);flex:1;text-align:center;min-width:260px;max-width:480px}
+.upload-box:hover,.upload-box.over{border-color:var(--accent)}
+.upload-box.loaded{border-color:var(--green);border-style:solid}
+.upload-box input{display:none}
+.upload-box .fn{color:var(--green);font-size:.72rem;margin-top:.2rem;word-break:break-all;text-align:left}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:.35rem .8rem;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{opacity:.9} .btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--text)}
+
+/* Loaded files list inside upload box */
+.files-list{display:flex;flex-direction:column;gap:2px;margin-top:6px;text-align:left;max-height:90px;overflow:auto}
+.files-list .row{display:flex;justify-content:space-between;gap:6px;padding:1px 4px;border-radius:3px;font-size:.7rem}
+.files-list .row .nm{color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.files-list .row .ct{color:var(--text2);font-variant-numeric:tabular-nums}
+.files-list .row .x{cursor:pointer;color:var(--text2)}
+.files-list .row .x:hover{color:var(--red)}
+
+/* Controls */
+.controls{display:flex;flex-wrap:wrap;gap:.5rem .8rem;padding:.5rem 1rem;background:var(--surface);border-bottom:1px solid var(--border);align-items:end}
+.ctrl{display:flex;flex-direction:column;gap:.2rem}
+.ctrl label{font-size:.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em}
+.ctrl input,.ctrl select{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:.3rem .5rem;font-family:inherit;font-size:.78rem;color:var(--text);width:auto}
+.ctrl input[type=number]{width:75px} .ctrl input[type=search]{width:180px} .ctrl input[type=text]{width:160px}
+.ctrl select{min-width:60px}
+.ctrl input:focus,.ctrl select:focus{outline:none;border-color:var(--accent)}
+.chips{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center}
+.chip{padding:.2rem .5rem;border-radius:4px;border:1px solid var(--border);font-size:.7rem;cursor:pointer;color:var(--text2);background:var(--surface2);transition:all .15s}
+.chip:hover{border-color:var(--accent);color:var(--text)}
+.chip.on{background:rgba(108,140,255,.15);border-color:var(--accent);color:var(--accent)}
+.chip.empty{opacity:.35}
+.preset{padding:.15rem .4rem;border-radius:3px;border:1px solid var(--border);font-size:.65rem;cursor:pointer;color:var(--text2);background:transparent}
+.preset:hover{border-color:var(--accent);color:var(--accent)}
+.preset.on{background:rgba(108,140,255,.15);border-color:var(--accent);color:var(--accent)}
+
+/* Stats bar */
+.stats-bar{display:flex;gap:1.2rem;padding:.4rem 1rem;background:var(--surface);border-bottom:1px solid var(--border);font-size:.75rem;color:var(--text2);flex-wrap:wrap}
+.stats-bar .sv{color:var(--accent);font-weight:600}
+
+/* Compare panel */
+.compare-panel{margin:.5rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.5rem .8rem}
+.cp-row{display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap}
+.cp-title{font-size:.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.4rem;display:flex;align-items:center;gap:.5rem}
+.cp-title .hint{color:var(--text2);font-size:.65rem;text-transform:none;letter-spacing:0;font-weight:400}
+.cp-pickers{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.cp-pickers .ctrl{margin:0}
+.cp-pickers select{min-width:200px;max-width:340px}
+.cp-venn{flex:0 0 auto}
+.cp-venn svg{display:block}
+.cp-stats{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;font-size:.75rem;align-items:center}
+.cp-stats .k{color:var(--text2);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em}
+.cp-stats .v{font-variant-numeric:tabular-nums;font-weight:600;color:var(--text);font-size:.85rem}
+.cp-stats .v.a{color:#6c8cff}
+.cp-stats .v.b{color:#f87171}
+.cp-stats .v.ab{color:#a855f7}
+.cp-modes{display:flex;gap:.3rem;align-items:center;margin-top:.4rem}
+.cp-modes .lbl{font-size:.7rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-right:.3rem}
+.cp-empty{color:var(--text2);font-size:.78rem;font-style:italic;padding:.6rem 0}
+
+/* Charts */
+.charts-row{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;padding:.5rem 1rem;background:var(--bg)}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.4rem .5rem;min-height:140px}
+.chart-card .ct{font-size:.65rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem;display:flex;align-items:center;justify-content:space-between;gap:.3rem}
+.chart-card canvas{width:100%;height:120px;display:block}
+.log-tog{background:transparent;border:1px solid var(--border);color:var(--text2);font-size:.6rem;padding:1px 5px;border-radius:3px;cursor:pointer;font-family:inherit;text-transform:none;letter-spacing:0;line-height:1.1}
+.log-tog:hover{border-color:var(--accent);color:var(--text)}
+.log-tog.on{background:rgba(108,140,255,.15);border-color:var(--accent);color:var(--accent)}
+
+/* Table */
+.table-wrap{overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin:.5rem 1rem;flex:1}
+table{width:100%;border-collapse:collapse;white-space:nowrap;table-layout:auto}
+th{background:var(--surface2);color:var(--text2);text-align:left;padding:.25rem .4rem;position:sticky;top:0;cursor:pointer;user-select:none;z-index:1;font-size:.72rem;text-transform:uppercase;letter-spacing:.03em}
+th:hover{color:var(--accent)}
+th .sa{font-size:.6em;margin-left:.15rem;opacity:.5}
+td{padding:.25rem .4rem;border-top:1px solid rgba(46,49,64,.5);font-size:.75rem;user-select:text;-webkit-user-select:text}
+tr:hover td{background:var(--surface2)}
+tr.sel td{background:#1e3a5f !important}
+tr{cursor:pointer}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.w-loc,th.w-loc{max-width:14ch}
+td.w-tiny,th.w-tiny{max-width:8ch;overflow:hidden;text-overflow:ellipsis}
+td.w-num,th.w-num{max-width:7ch}
+td.w-seq,th.w-seq{max-width:10ch;white-space:normal;word-break:break-all;font-family:inherit;line-height:1.1}
+td.w-file,th.w-file{max-width:18ch;overflow:hidden;text-overflow:ellipsis;font-size:.7rem;color:var(--text2)}
+td.w-genes,th.w-genes{max-width:16ch;white-space:normal;word-break:break-word;line-height:1.15;color:var(--green)}
+td.w-sample,th.w-sample{max-width:12ch;overflow:hidden;text-overflow:ellipsis;color:var(--text2);font-size:.7rem}
+::selection{background:#3b5bdb;color:#fff}
+a.igv-link{color:var(--accent);text-decoration:none;cursor:pointer}
+a.igv-link:hover{text-decoration:underline}
+a.igv-link.ok{color:var(--green)}
+a.igv-link.err{color:var(--red)}
+td.pass{color:var(--green)} td.lowlod{color:var(--amber)} td.nopass{color:var(--red)}
+td.type-snp{color:var(--accent)} td.type-ins,td.type-del{color:var(--amber)} td.type-mnp,td.type-complex{color:var(--purple)}
+td.gt-cell{cursor:help}
+td.gt-cell:hover{background:rgba(108,140,255,.12)}
+th.w-gt,th.gt-head{cursor:help}
+#gt-legend{position:fixed;z-index:50;display:none;background:var(--surface);border:1px solid var(--accent);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.5);padding:.6rem .8rem;font-size:.72rem;color:var(--text);max-width:520px;line-height:1.45}
+#gt-legend.on{display:block}
+#gt-legend h4{font-size:.72rem;color:var(--accent);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em}
+#gt-legend .row{display:flex;gap:.4rem;margin:.15rem 0}
+#gt-legend .k{color:var(--accent);font-weight:600;min-width:5ch;font-family:inherit}
+#gt-legend .v{color:var(--text2)}
+#gt-legend hr{border:none;border-top:1px solid var(--border);margin:.4rem 0}
+#gt-legend .close{float:right;cursor:pointer;color:var(--text2);font-size:.9rem;line-height:1;margin-left:.4rem}
+#gt-legend .close:hover{color:var(--red)}
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:.35rem 1rem;font-size:.75rem;color:var(--text2);background:var(--surface);border-top:1px solid var(--border)}
+.pagination .pg-btns{display:flex;gap:.3rem}
+
+/* Detail panel */
+.detail-panel{margin:.5rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.dp-header{background:var(--surface2);padding:.4rem .8rem;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.dp-header strong{color:var(--text);text-transform:none;letter-spacing:0}
+.dp-body{max-height:350px;overflow:auto}
+.dp-empty{padding:.8rem;text-align:center;color:var(--text2);font-size:.78rem}
+.kv{width:100%;border-collapse:collapse;font-size:.72rem}
+.kv td{padding:2px 8px;border-bottom:1px solid rgba(46,49,64,.4);vertical-align:top}
+.kv .k{width:160px;color:var(--text2);background:rgba(0,0,0,.15);white-space:nowrap;font-weight:600}
+.kv .v{color:var(--text);word-break:break-all;white-space:pre-wrap}
+.kv tr.samp .k{color:var(--accent);background:rgba(88,166,255,.06);border-left:2px solid rgba(88,166,255,.3)}
+.kv tr.samp .v{background:rgba(88,166,255,.03)}
+.kv tr:hover td{background:#1f2937}
+
+@media(max-width:1100px){.charts-row{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.charts-row{grid-template-columns:1fr}.controls{flex-direction:column;align-items:stretch}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>FreeBayes</span> Variant Explorer</h1>
+  <div class="meta" id="file-meta">No files loaded</div>
+</div>
+
+<div class="upload-row">
+  <div class="upload-box" id="vcf-zone" onclick="document.getElementById('vcf-input').click()"
+       title="Drop or click to load one or more FreeBayes VCFs (.vcf or .vcf.gz). All variants are pooled into a single table tagged with their source file.">
+    Drop or click &mdash; <code>.vcf</code> / <code>.vcf.gz</code> <em>(multi-select OK)</em>
+    <div class="fn" id="vcf-name" style="display:none"></div>
+    <div class="files-list" id="files-list" style="display:none"></div>
+    <input type="file" id="vcf-input" accept=".vcf,.vcf.gz,.gz,.txt" multiple>
+  </div>
+  <div class="upload-box" id="folder-zone" onclick="document.getElementById('folder-input').click()"
+       title="Pick a folder; every .vcf / .vcf.gz inside is loaded.">
+    Or pick a <em>folder</em> of VCFs
+    <input type="file" id="folder-input" webkitdirectory directory multiple hidden>
+  </div>
+  <div class="upload-box" id="bed-zone" onclick="document.getElementById('bed-input').click()"
+       title="Optional BED with regions of interest. If column 4 has gene names, you also get a Genes column. The 'Restrict to BED' toggle filters analysis to in-region variants.">
+    Drop or click &mdash; <code>.bed</code> / <code>.bed.gz</code> <em>(optional, regions / annotation)</em>
+    <div class="fn" id="bed-name" style="display:none"></div>
+    <input type="file" id="bed-input" accept=".bed,.gz,text/plain,application/gzip">
+  </div>
+  <button class="btn-ghost btn" id="export-btn" disabled>Export TSV</button>
+</div>
+
+<div class="controls" id="controls" style="display:none">
+  <div class="ctrl"><label>Search</label><input id="f-search" type="search" placeholder="text / chr / gene"></div>
+  <div class="ctrl"><label>Region</label><input id="f-region" type="text" placeholder="chr7:55M-56M"></div>
+  <div class="ctrl"><label>Qual &ge;</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-qual" type="number" step="any" placeholder="-">
+      <div style="display:flex;gap:.15rem">
+        <button class="preset" data-t="f-qual" data-v="20">20</button>
+        <button class="preset" data-t="f-qual" data-v="100">100</button>
+        <button class="preset" data-t="f-qual" data-v="200">200</button>
+      </div>
+    </div>
+  </div>
+  <div class="ctrl"><label>Odds &ge;</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-odds" type="number" step="any" placeholder="-">
+      <div style="display:flex;gap:.15rem">
+        <button class="preset" data-t="f-odds" data-v="10">10</button>
+        <button class="preset" data-t="f-odds" data-v="30">30</button>
+        <button class="preset" data-t="f-odds" data-v="50">50</button>
+      </div>
+    </div>
+  </div>
+  <div class="ctrl"><label>MQM &ge;</label><input id="f-mqm" type="number" step="any" placeholder="-"></div>
+  <div class="ctrl"><label>DP &ge;</label><input id="f-dp" type="number" step="1" placeholder="-"></div>
+  <div class="ctrl"><label>T-VAF &ge;</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-tvaf" type="number" step="0.01" placeholder="-">
+      <div style="display:flex;gap:.15rem">
+        <button class="preset" data-t="f-tvaf" data-v="0.05">.05</button>
+        <button class="preset" data-t="f-tvaf" data-v="0.10">.10</button>
+        <button class="preset" data-t="f-tvaf" data-v="0.20">.20</button>
+      </div>
+    </div>
+  </div>
+  <div class="ctrl"><label>N-VAF &le;</label>
+    <div style="display:flex;gap:.2rem;align-items:center">
+      <input id="f-nvaf" type="number" step="0.01" placeholder="-">
+      <div style="display:flex;gap:.15rem">
+        <button class="preset" data-t="f-nvaf" data-v="0.02">.02</button>
+        <button class="preset" data-t="f-nvaf" data-v="0.01">.01</button>
+        <button class="preset" data-t="f-nvaf" data-v="0.005">.005</button>
+      </div>
+    </div>
+  </div>
+  <div class="ctrl"><label>T-AD &ge;</label><input id="f-tad" type="number" step="1" placeholder="-"></div>
+  <div class="ctrl"><label>N-AD &le;</label><input id="f-nad" type="number" step="1" placeholder="-"></div>
+  <div class="ctrl"><label>Std chr</label>
+    <button class="chip" id="f-std-chr" title="Hide variants on non-standard chromosomes (chrUn_*, *_random, *_alt, decoy)">standard only</button>
+  </div>
+  <div class="ctrl"><label>BED restrict</label>
+    <button class="chip" id="f-bed-on" disabled title="Toggle on after loading a BED to restrict analysis to its regions">restrict to BED</button>
+  </div>
+  <div class="ctrl"><label>Rows/pg</label>
+    <select id="f-page-size"><option value="50">50</option><option value="100" selected>100</option><option value="250">250</option><option value="500">500</option><option value="1000">1k</option></select>
+  </div>
+  <div class="ctrl"><label>Preset</label>
+    <div class="chips">
+      <button class="preset" data-preset="off">Off</button>
+      <button class="preset" data-preset="moderate">Moderate</button>
+      <button class="preset" data-preset="strict">Strict</button>
+    </div>
+  </div>
+  <button class="btn-ghost btn" id="reset-btn" style="margin-left:auto">Reset</button>
+</div>
+
+<div id="chip-bar" class="controls" style="display:none"></div>
+
+<div class="stats-bar" id="stats-bar" style="display:none">
+  <span>Rows: <span class="sv" id="s-total">0</span></span>
+  <span>Shown: <span class="sv" id="s-shown">0</span></span>
+  <span>PASS: <span class="sv" id="s-pass">0</span></span>
+  <span>SNV: <span class="sv" id="s-snv">0</span></span>
+  <span>INDEL: <span class="sv" id="s-indel">0</span></span>
+  <span>Files: <span class="sv" id="s-files">0</span></span>
+  <span id="s-bed"></span>
+</div>
+
+<div class="compare-panel" id="compare-panel" style="display:none">
+  <div class="cp-title">Compare two files <span class="hint">— pick A and B; click any region or chip to scope the table</span></div>
+  <div class="cp-row" id="cp-pickers-row">
+    <div class="cp-pickers">
+      <div class="ctrl"><label>A</label><select id="cp-a"></select></div>
+      <div class="ctrl"><label>B</label><select id="cp-b"></select></div>
+      <button class="btn-ghost btn" id="cp-swap" title="Swap A and B">⇄</button>
+    </div>
+  </div>
+  <div class="cp-row" style="margin-top:.4rem" id="cp-detail-row">
+    <div class="cp-venn" id="cp-venn"></div>
+    <div class="cp-stats" id="cp-stats"></div>
+  </div>
+  <div class="cp-modes" id="cp-modes">
+    <span class="lbl">Show:</span>
+    <button class="chip on"      data-cmpmode="all">  All loaded variants</button>
+    <button class="chip"         data-cmpmode="aonly">A only</button>
+    <button class="chip"         data-cmpmode="both"> A ∩ B</button>
+    <button class="chip"         data-cmpmode="bonly">B only</button>
+    <button class="chip"         data-cmpmode="union">A ∪ B</button>
+  </div>
+</div>
+
+<div class="charts-row" id="charts-row" style="display:none">
+  <div class="chart-card"><div class="ct"><span>QUAL</span><button class="log-tog" data-chart="qual" title="Toggle log10 x-axis">log10</button></div><canvas id="c-qual"></canvas></div>
+  <div class="chart-card"><div class="ct"><span>ODDS</span><button class="log-tog" data-chart="odds" title="Toggle log10 x-axis">log10</button></div><canvas id="c-odds"></canvas></div>
+  <div class="chart-card"><div class="ct"><span>T-VAF</span></div><canvas id="c-tvaf"></canvas></div>
+</div>
+
+<div class="table-wrap" id="table-wrap" style="display:none;max-height:calc(100vh - 420px)">
+  <table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table>
+</div>
+<div class="pagination" id="pagination" style="display:none">
+  <span id="pg-info">-</span>
+  <div class="pg-btns">
+    <button class="btn-ghost btn" id="pg-first">&laquo;</button>
+    <button class="btn-ghost btn" id="pg-prev">&lsaquo; Prev</button>
+    <button class="btn-ghost btn" id="pg-next">Next &rsaquo;</button>
+    <button class="btn-ghost btn" id="pg-last">&raquo;</button>
+  </div>
+</div>
+
+<div class="detail-panel" id="detail-panel" style="display:none">
+  <div class="dp-header">
+    <span>Selected row detail</span>
+    <strong id="dp-locus">-</strong>
+  </div>
+  <div class="dp-body" id="dp-body"><div class="dp-empty">Click a row</div></div>
+</div>
+
+<div id="gt-legend" role="dialog" aria-label="Genotype and FORMAT legend">
+  <span class="close" id="gt-legend-close" title="Close">&times;</span>
+  <h4>FreeBayes per-sample FORMAT fields</h4>
+  <div class="row"><span class="k">GT</span><span class="v">genotype (0/0 ref, 0/1 het, 1/1 hom-alt, ./. missing)</span></div>
+  <div class="row"><span class="k">AD</span><span class="v">allelic depth (ref,alt[,alt2,...])</span></div>
+  <div class="row"><span class="k">AO</span><span class="v">alt observation count</span></div>
+  <div class="row"><span class="k">RO</span><span class="v">ref observation count</span></div>
+  <div class="row"><span class="k">DP</span><span class="v">total read depth at this site</span></div>
+  <div class="row"><span class="k">GQ</span><span class="v">genotype quality (Phred)</span></div>
+  <div class="row"><span class="k">PL</span><span class="v">Phred-scaled likelihoods (0/0, 0/1, 1/1)</span></div>
+  <div class="row"><span class="k">QA</span><span class="v">sum of alt-supporting base qualities</span></div>
+  <div class="row"><span class="k">QR</span><span class="v">sum of ref-supporting base qualities</span></div>
+  <hr>
+  <h4>Site-level INFO fields</h4>
+  <div class="row"><span class="k">QUAL</span><span class="v">site quality, Phred-scaled</span></div>
+  <div class="row"><span class="k">ODDS</span><span class="v">log-odds of best vs second-best genotype combination — closest analog to a LOD score</span></div>
+  <div class="row"><span class="k">MQM</span><span class="v">mean mapping quality of alt-supporting reads</span></div>
+  <div class="row"><span class="k">MQMR</span><span class="v">mean mapping quality of ref-supporting reads</span></div>
+  <div class="row"><span class="k">SAP</span><span class="v">strand-bias Phred for the alt allele</span></div>
+  <div class="row"><span class="k">SRP</span><span class="v">strand-bias Phred for the ref allele</span></div>
+  <div class="row"><span class="k">EPP</span><span class="v">end-placement Phred for alt reads (read-end pile-up bias)</span></div>
+  <div class="row"><span class="k">PAIRED</span><span class="v">fraction of alt reads in proper pairs</span></div>
+  <div class="row"><span class="k">TYPE</span><span class="v">snp / mnp / ins / del / complex</span></div>
+  <hr>
+  <div class="row"><span class="k" style="color:var(--text2)">Tip</span><span class="v">Click outside or press <kbd style="background:var(--surface2);padding:1px 5px;border-radius:3px;border:1px solid var(--border)">Esc</kbd> to dismiss</span></div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* === Column defs === */
+const TCOLS = [
+  {k:"source",  l:"File",   w:"file"},
+  {k:"locus",   l:"IGV",    w:"loc"},
+  {k:"ref",     l:"Ref",    w:"seq"},
+  {k:"alt",     l:"Alt",    w:"seq"},
+  {k:"type",    l:"Type",   w:"tiny"},
+  {k:"genes",   l:"Genes",  w:"genes"},
+  {k:"qual",    l:"Qual",   n:1, w:"num"},
+  {k:"odds",    l:"Odds",   n:1, w:"num"},
+  {k:"mqm",     l:"MQM",    n:1, w:"num"},
+  {k:"dp",      l:"DP",     n:1, w:"num"},
+  {k:"t_vaf",   l:"T-VAF",  n:1, w:"num"},
+  {k:"t_ad",    l:"T-AD",   n:1, w:"num"},
+  {k:"t_dp",    l:"T-DP",   n:1, w:"num"},
+  {k:"n_vaf",   l:"N-VAF",  n:1, w:"num"},
+  {k:"n_ad",    l:"N-AD",   n:1, w:"num"},
+  {k:"n_dp",    l:"N-DP",   n:1, w:"num"},
+  {k:"filter",  l:"Filter", w:"tiny"},
+  {k:"sample",  l:"Tumor",  w:"sample"},
+];
+const NUM = new Set(["pos","qual","odds","mqm","mqmr","dp","sap","srp","epp","paired",
+                     "t_vaf","t_ad","t_dp","n_vaf","n_ad","n_dp"]);
+
+/* === State === */
+const S = {
+  files: [],          // [{id, name, count, color}]
+  rows:  [],          // pooled rows from all files
+  filt:  [],
+  selId: null,
+  pg: 1, pgSz: 100,
+  sort: { k: "qual", d: "desc" },
+  logScale: { qual: false, odds: false },
+  bed: null,          // {byChr, intervalCount, totalBp, name}
+  bedActive: false,
+  cmp: { a: null, b: null, mode: "all" },  // pairwise comparison state
+  f: {
+    search: "", region: null, qualMin: null, oddsMin: null, mqmMin: null,
+    dpMin: null, tvafMin: null, nvafMax: null, tadMin: null, nadMax: null,
+    stdChrOnly: false,
+    files: new Set(),    // chips
+    types: new Set(),
+    filters: new Set(),
+    samples: new Set(),
+  },
+};
+
+/* === DOM === */
+const $ = id => document.getElementById(id);
+
+/* === Color palette for files === */
+const FILE_COLORS = ["#6c8cff","#4ade80","#fbbf24","#f87171","#a855f7","#60a5fa","#fb7185","#34d399","#facc15","#c084fc"];
+
+/* === Init table header === */
+TCOLS.forEach(c => {
+  const th = document.createElement("th"); th.dataset.k = c.k;
+  if (c.w) th.classList.add("w-" + c.w);
+  th.innerHTML = esc(c.l) + '<span class="sa"></span>';
+  th.onclick = () => { toggleSort(c.k); render(); };
+  $("thead").appendChild(th);
+});
+
+/* === Events: VCF upload === */
+$("vcf-input").onchange = e => { const fs = Array.from(e.target.files||[]); if (fs.length) loadVCFs(fs); $("vcf-input").value = ""; };
+["dragenter","dragover"].forEach(e => $("vcf-zone").addEventListener(e, ev => { ev.preventDefault(); $("vcf-zone").classList.add("over"); }));
+["dragleave","drop"].forEach(e => $("vcf-zone").addEventListener(e, ev => { ev.preventDefault(); $("vcf-zone").classList.remove("over"); }));
+$("vcf-zone").addEventListener("drop", e => {
+  const fs = Array.from(e.dataTransfer.files || []).filter(f => /\.vcf(\.gz)?$/i.test(f.name));
+  if (fs.length) loadVCFs(fs);
+});
+$("folder-input").onchange = e => {
+  const fs = Array.from(e.target.files || []).filter(f => /\.vcf(\.gz)?$/i.test(f.name));
+  if (fs.length) loadVCFs(fs);
+  $("folder-input").value = "";
+};
+
+/* === BED upload === */
+$("bed-input").onchange = e => { const f = e.target.files[0]; if (f) loadBEDFile(f); $("bed-input").value = ""; };
+["dragenter","dragover"].forEach(e => $("bed-zone").addEventListener(e, ev => { ev.preventDefault(); $("bed-zone").classList.add("over"); }));
+["dragleave","drop"].forEach(e => $("bed-zone").addEventListener(e, ev => { ev.preventDefault(); $("bed-zone").classList.remove("over"); }));
+$("bed-zone").addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) loadBEDFile(f); });
+
+$("export-btn").onclick = exportTSV;
+$("reset-btn").onclick = () => { resetF(); render(); };
+$("pg-prev").onclick = () => { if (S.pg > 1) { S.pg--; rTable(); } };
+$("pg-next").onclick = () => { if (S.pg < tPages()) { S.pg++; rTable(); } };
+$("pg-first").onclick = () => { S.pg = 1; rTable(); };
+$("pg-last").onclick  = () => { S.pg = tPages(); rTable(); };
+
+document.querySelectorAll(".preset[data-t]").forEach(b => {
+  b.onclick = () => { $(b.dataset.t).value = b.dataset.v; syncF(); render(); };
+});
+
+const PRESETS = {
+  off:      { },
+  moderate: { qualMin:100, oddsMin:30, mqmMin:60, dpMin:30, tvafMin:0.10, tadMin:6,  nvafMax:0.01,  nadMax:1, types:new Set(["snp"]) },
+  strict:   { qualMin:200, oddsMin:50, mqmMin:60, dpMin:50, tvafMin:0.15, tadMin:10, nvafMax:0.005, nadMax:0, types:new Set(["snp"]) },
+};
+document.querySelectorAll(".preset[data-preset]").forEach(b => {
+  b.onclick = () => {
+    const p = PRESETS[b.dataset.preset] || {};
+    const setVal = (id, v) => { $(id).value = (v == null ? "" : String(v)); };
+    setVal("f-qual", p.qualMin); setVal("f-odds", p.oddsMin);
+    setVal("f-mqm",  p.mqmMin);  setVal("f-dp",   p.dpMin);
+    setVal("f-tvaf", p.tvafMin); setVal("f-nvaf", p.nvafMax);
+    setVal("f-tad",  p.tadMin);  setVal("f-nad",  p.nadMax);
+    S.f.types = p.types ? new Set(p.types) : new Set();
+    document.querySelectorAll(".preset[data-preset]").forEach(x => x.classList.toggle("on", x === b));
+    syncF(); render();
+  };
+});
+
+["f-search","f-region","f-qual","f-odds","f-mqm","f-dp","f-tvaf","f-nvaf",
+ "f-tad","f-nad","f-page-size"].forEach(id => {
+  $(id).addEventListener("input", () => { syncF(); render(); });
+});
+$("f-std-chr").onclick = () => {
+  S.f.stdChrOnly = !S.f.stdChrOnly;
+  $("f-std-chr").classList.toggle("on", S.f.stdChrOnly);
+  S.pg = 1; render();
+};
+$("f-bed-on").onclick = () => {
+  if (!S.bed) return;
+  S.bedActive = !S.bedActive;
+  $("f-bed-on").classList.toggle("on", S.bedActive);
+  S.pg = 1; render();
+};
+document.querySelectorAll(".log-tog").forEach(b => {
+  b.onclick = () => {
+    const c = b.dataset.chart;
+    S.logScale[c] = !S.logScale[c];
+    b.classList.toggle("on", S.logScale[c]);
+    rCharts();
+  };
+});
+
+/* === Compare panel events === */
+$("cp-a").addEventListener("change", () => { S.cmp.a = +$("cp-a").value; render(); });
+$("cp-b").addEventListener("change", () => { S.cmp.b = +$("cp-b").value; render(); });
+$("cp-swap").onclick = () => {
+  const t = S.cmp.a; S.cmp.a = S.cmp.b; S.cmp.b = t;
+  render();
+};
+document.querySelectorAll("[data-cmpmode]").forEach(el => {
+  if (el.tagName === "BUTTON") {
+    el.addEventListener("click", () => {
+      S.cmp.mode = el.dataset.cmpmode;
+      syncCmpModeChips();
+      S.pg = 1; render();
+    });
+  }
+});
+
+/* === Legend popover === */
+function showGtLegend(anchorEl) {
+  const leg = $("gt-legend");
+  leg.classList.add("on");
+  const r = anchorEl.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const lw = leg.offsetWidth, lh = leg.offsetHeight;
+  let x = r.left, y = r.bottom + 4;
+  if (x + lw > vw - 8) x = Math.max(8, vw - lw - 8);
+  if (y + lh > vh - 8) y = Math.max(8, r.top - lh - 4);
+  leg.style.left = x + "px"; leg.style.top = y + "px";
+}
+function hideGtLegend() { $("gt-legend").classList.remove("on"); }
+$("gt-legend-close").onclick = e => { e.stopPropagation(); hideGtLegend(); };
+document.addEventListener("click", e => {
+  const leg = $("gt-legend");
+  if (!leg.classList.contains("on")) return;
+  if (e.target.closest("#gt-legend")) return;
+  if (e.target.closest(".gt-cell") || e.target.closest(".gt-head")) return;
+  hideGtLegend();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") hideGtLegend(); });
+
+/* === File load (VCFs) === */
+async function loadVCFs(fileList) {
+  $("file-meta").textContent = "Loading " + fileList.length + " file(s)…";
+  const t0 = performance.now();
+  for (const file of fileList) {
+    try {
+      const text = await readFileText(file);
+      const fid = (S.files.length ? Math.max(...S.files.map(f=>f.id)) + 1 : 1);
+      const fileEntry = { id: fid, name: file.name, count: 0, color: FILE_COLORS[(fid-1) % FILE_COLORS.length] };
+      const before = S.rows.length;
+      ingestVCF(text, file.name, fileEntry);
+      fileEntry.count = S.rows.length - before;
+      S.files.push(fileEntry);
+    } catch (e) {
+      console.error("Failed to parse", file.name, e);
+      $("file-meta").textContent = "Error in " + file.name + ": " + e.message;
+    }
+  }
+  const ms = (performance.now() - t0).toFixed(0);
+  $("file-meta").textContent =
+    S.files.length + " file" + (S.files.length===1?"":"s") + " — " +
+    S.rows.length.toLocaleString() + " variants — parsed in " + ms + "ms";
+  if (S.bed) annotateAllRowsWithGenes();
+  showWorkspace();
+  render();
+  renderFilesList();
+}
+
+async function readFileText(blob) {
+  if (blob.name && blob.name.endsWith(".gz")) {
+    if (typeof DecompressionStream === "undefined") throw new Error("Browser lacks DecompressionStream — uncompress the file first");
+    return await new Response(blob.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }
+  return await blob.text();
+}
+
+function ingestVCF(text, name, fileEntry) {
+  const lines = text.split(/\r?\n/);
+  let tumor = null, normal = null, tumorIdx = -1, normalIdx = -1;
+  let header = [], chromline = null;
+
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    if (!line) continue;
+    if (line.startsWith("##")) {
+      header.push(line);
+      const m = line.match(/^##sarek_subset_(tumor|normal)_sample=(.+)$/);
+      if (m) { if (m[1]==="tumor") tumor = m[2]; else normal = m[2]; }
+      continue;
+    }
+    if (line.startsWith("#CHROM")) {
+      chromline = line;
+      const cols = line.split("\t");
+      const samples = cols.slice(9);
+      if (!tumor && !normal) {
+        for (const s of samples) {
+          if (/tumor|_T$|-T$|\.T$/i.test(s) && !tumor)  tumor  = s;
+          else if (/normal|_N$|-N$|\.N$/i.test(s) && !normal) normal = s;
+        }
+        if (!tumor && !normal && samples.length === 2) {
+          // FreeBayes/Sarek convention: first=normal, second=tumor.
+          normal = samples[0]; tumor = samples[1];
+        } else if (!tumor && samples.length === 1) {
+          tumor = samples[0];
+        }
+      }
+      tumorIdx  = tumor  ? 9 + samples.indexOf(tumor)  : -1;
+      normalIdx = normal ? 9 + samples.indexOf(normal) : -1;
+      continue;
+    }
+
+    // Variant line
+    const f = line.split("\t");
+    if (f.length < 8) continue;
+    const chrom = f[0];
+    const pos   = +f[1];
+    const ref   = f[3];
+    const altRaw = f[4];
+    const qual  = mNum(f[5]);
+    const filter = f[6];
+    const info = parseInfo(f[7]);
+    const fmtKeys = (f.length > 8 && f[8]) ? f[8].split(":") : null;
+
+    // Per-sample
+    function pull(idx) {
+      if (idx < 0 || idx >= f.length || !fmtKeys) return null;
+      const vals = f[idx].split(":");
+      const d = {};
+      for (let i = 0; i < fmtKeys.length; i++) d[fmtKeys[i]] = vals[i];
+      return d;
+    }
+    const T = pull(tumorIdx), N = pull(normalIdx);
+
+    function altSum(d, ai) {
+      // ai = which alt index (0-based; -1 = sum all alts)
+      if (!d) return null;
+      if (d.AD && d.AD !== ".") {
+        const parts = d.AD.split(",");
+        if (parts.length >= 2) {
+          if (ai >= 0) { const v = +parts[ai+1]; return Number.isFinite(v) ? v : null; }
+          let s = 0; for (let i = 1; i < parts.length; i++) { const v = +parts[i]; if (Number.isFinite(v)) s += v; }
+          return s;
+        }
+      }
+      if (d.AO && d.AO !== ".") {
+        const parts = d.AO.split(",");
+        if (ai >= 0) { const v = +parts[ai]; return Number.isFinite(v) ? v : null; }
+        let s = 0; for (const x of parts) { const v = +x; if (Number.isFinite(v)) s += v; }
+        return s;
+      }
+      return null;
+    }
+    function refCount(d) {
+      if (!d) return null;
+      if (d.AD && d.AD !== ".") { const v = +d.AD.split(",")[0]; if (Number.isFinite(v)) return v; }
+      const ro = d.RO; if (ro && ro !== ".") { const v = +ro.split(",")[0]; if (Number.isFinite(v)) return v; }
+      return null;
+    }
+    function depth(d, r, a) {
+      if (!d) return null;
+      if (d.DP && d.DP !== ".") { const v = +d.DP.split(",")[0]; if (Number.isFinite(v)) return v; }
+      if (r != null && a != null) return r + a;
+      return null;
+    }
+
+    // For multi-ALT lines we emit one row per ALT so sort/filter operates at allele granularity.
+    const alts = altRaw.split(",");
+    for (let ai = 0; ai < alts.length; ai++) {
+      const alt = alts[ai];
+      const type = (info.TYPE && info.TYPE.split(",")[ai]) || classifyType(ref, alt);
+      const tA = altSum(T, ai), tR = refCount(T);
+      const nA = altSum(N, ai), nR = refCount(N);
+      const tDP = depth(T, tR, tA), nDP = depth(N, nR, nA);
+      const tVAF = (tDP && tDP > 0 && tA != null) ? tA / tDP : null;
+      const nVAF = (nDP && nDP > 0 && nA != null) ? nA / nDP : null;
+
+      const r = {
+        id: S.rows.length,
+        sourceId: fileEntry.id,
+        source: shortFilename(name),
+        chrom, pos, ref, alt, type,
+        qual,
+        odds: mNum(info.ODDS),
+        mqm:  mNum(info.MQM),
+        mqmr: mNum(info.MQMR),
+        dp:   mNum(info.DP),
+        sap:  mNum(info.SAP),
+        srp:  mNum(info.SRP),
+        epp:  mNum(info.EPP),
+        paired: mNum(info.PAIRED),
+        t_gt: T ? T.GT : null,
+        t_ad: tA, t_dp: tDP, t_vaf: tVAF,
+        n_gt: N ? N.GT : null,
+        n_ad: nA, n_dp: nDP, n_vaf: nVAF,
+        filter,
+        sample: tumor || "—",
+        normalSample: normal || "—",
+        locus: igvLoc(chrom, pos),
+        info, _info_raw: f[7],
+        fmtKeys, T, N,
+        raw: line,
+        genes: "",
+      };
+      // search corpus
+      r._st = (chrom + " " + pos + " " + ref + " " + alt + " " + type + " " + filter + " " + (r.source||"") + " " + (tumor||"") + " " + (normal||"")).toLowerCase();
+      r._key = chrom + ":" + pos + ":" + ref + ":" + alt;
+      S.rows.push(r);
+      // Build per-file key set for pairwise comparison.
+      if (!fileEntry.keys) fileEntry.keys = new Set();
+      fileEntry.keys.add(r._key);
+    }
+  }
+}
+
+function classifyType(ref, alt) {
+  if (ref.length === 1 && alt.length === 1) return "snp";
+  if (ref.length === 1 && alt.length  >  1) return "ins";
+  if (ref.length  >  1 && alt.length === 1) return "del";
+  if (ref.length === alt.length)            return "mnp";
+  return "complex";
+}
+
+function shortFilename(name) {
+  // strip common suffixes & path components
+  let s = name.split("/").pop();
+  s = s.replace(/\.somatic_subset\.vcf(\.gz)?$/i, "")
+       .replace(/\.freebayes\.somatic_subset\.vcf(\.gz)?$/i, "")
+       .replace(/\.freebayes\.vcf(\.gz)?$/i, "")
+       .replace(/_freebayes_tumor_vs_normal/i, "")
+       .replace(/\.vcf(\.gz)?$/i, "");
+  return s.length > 32 ? s.slice(0, 30) + "…" : s;
+}
+
+function parseInfo(s) {
+  if (!s || s === ".") return {};
+  const out = {};
+  for (const kv of s.split(";")) {
+    const eq = kv.indexOf("=");
+    if (eq === -1) out[kv] = "1"; else out[kv.slice(0, eq)] = kv.slice(eq + 1);
+  }
+  return out;
+}
+
+/* === BED load (regions + gene annotation) === */
+async function loadBEDFile(blob) {
+  $("bed-name").style.display = "";
+  $("bed-name").textContent = "Loading " + blob.name + "…";
+  try {
+    const text = await readFileText(blob);
+    const bed = parseBED(text, blob.name);
+    S.bed = bed;
+    S.bedActive = true;
+    $("f-bed-on").disabled = false;
+    $("f-bed-on").classList.add("on");
+    $("bed-zone").classList.add("loaded");
+    $("bed-name").textContent =
+      blob.name + " — " + bed.intervalCount.toLocaleString() + " regions, " +
+      (bed.totalBp/1e6).toFixed(2) + " Mb" +
+      (bed.geneIntern.size ? ", " + bed.geneIntern.size.toLocaleString() + " gene names" : "");
+    if (S.rows.length) annotateAllRowsWithGenes();
+    render();
+  } catch (e) {
+    $("bed-name").textContent = "Error: " + e.message;
+    console.error(e);
+  }
+}
+
+function parseBED(text, name) {
+  const buckets = new Map();
+  const geneIntern = new Map();
+  let n = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw) continue;
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("track") || line.startsWith("browser")) continue;
+    const t = line.split(/\t| +/);
+    if (t.length < 3) continue;
+    const chr = normC(t[0]);
+    const s = +t[1] + 1;  // 0-based half-open → 1-based inclusive
+    const e = +t[2];
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) continue;
+    let gene = (t.length >= 4 && t[3]) ? t[3].trim() : "";
+    if (gene) {
+      const cached = geneIntern.get(gene);
+      if (cached) gene = cached; else geneIntern.set(gene, gene);
+    }
+    let buf = buckets.get(chr);
+    if (!buf) { buf = []; buckets.set(chr, buf); }
+    buf.push([s, e, gene]);
+    n++;
+  }
+  // Sort + merge per-chrom for region restriction; build parallel arrays for gene lookup.
+  const byChr = new Map();
+  let totalBp = 0;
+  for (const [chr, buf] of buckets) {
+    buf.sort((a, b) => a[0] - b[0]);
+    const starts = new Int32Array(buf.length);
+    const ends   = new Int32Array(buf.length);
+    const genes  = new Array(buf.length);
+    const maxEnd = new Int32Array(buf.length);
+    let running = 0;
+    for (let i = 0; i < buf.length; i++) {
+      starts[i] = buf[i][0]; ends[i] = buf[i][1]; genes[i] = buf[i][2];
+      if (buf[i][1] > running) running = buf[i][1];
+      maxEnd[i] = running;
+    }
+    // merged intervals (for region restriction)
+    const merged = [];
+    for (const [s, e] of buf) {
+      if (merged.length && s <= merged[merged.length-1][1] + 1) {
+        if (e > merged[merged.length-1][1]) merged[merged.length-1][1] = e;
+      } else merged.push([s, e]);
+    }
+    for (const [s, e] of merged) totalBp += (e - s + 1);
+    byChr.set(chr, { starts, ends, genes, maxEnd, merged });
+  }
+  return { byChr, intervalCount: n, totalBp, geneIntern, name };
+}
+
+function inBED(bed, chrom, pos) {
+  if (!bed) return false;
+  let idx = bed.byChr.get(normC(chrom));
+  if (!idx) return false;
+  const arr = idx.merged;
+  let lo = 0, hi = arr.length - 1, best = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid][0] <= pos) { best = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return best >= 0 && arr[best][1] >= pos;
+}
+
+function _upperBoundLE(arr, t) {
+  let lo = 0, hi = arr.length - 1, ret = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] <= t) { ret = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ret;
+}
+function genesAtPos(chr, pos) {
+  const out = new Set();
+  if (!S.bed || chr == null || pos == null || !Number.isFinite(+pos)) return out;
+  const idx = S.bed.byChr.get(normC(chr));
+  if (!idx) return out;
+  const { starts, ends, genes, maxEnd } = idx;
+  const hi = _upperBoundLE(starts, pos);
+  if (hi < 0) return out;
+  for (let i = hi; i >= 0; i--) {
+    if (ends[i] >= pos && genes[i]) out.add(genes[i]);
+    if (maxEnd[i] < pos) break;
+  }
+  return out;
+}
+function annotateAllRowsWithGenes() {
+  for (const r of S.rows) {
+    const set = genesAtPos(r.chrom, r.pos);
+    r.genes = set.size ? Array.from(set).sort().join(", ") : "";
+    if (r.genes) r._st += " " + r.genes.toLowerCase();
+  }
+}
+
+/* === Filters === */
+function resetF() {
+  S.f = {
+    search:"", region:null, qualMin:null, oddsMin:null, mqmMin:null,
+    dpMin:null, tvafMin:null, nvafMax:null, tadMin:null, nadMax:null,
+    stdChrOnly:false,
+    files: new Set(), types: new Set(), filters: new Set(), samples: new Set(),
+  };
+  S.pg = 1; S.pgSz = 100;
+  ["f-search","f-region","f-qual","f-odds","f-mqm","f-dp","f-tvaf","f-nvaf","f-tad","f-nad"]
+    .forEach(id => { $(id).value = ""; });
+  $("f-page-size").value = "100";
+  $("f-std-chr").classList.remove("on");
+  document.querySelectorAll(".preset[data-preset]").forEach(b => b.classList.remove("on"));
+}
+
+function syncF() {
+  S.f.search    = $("f-search").value.trim().toLowerCase();
+  S.f.region    = parseReg($("f-region").value.trim());
+  S.f.qualMin   = nNum($("f-qual").value);
+  S.f.oddsMin   = nNum($("f-odds").value);
+  S.f.mqmMin    = nNum($("f-mqm").value);
+  S.f.dpMin     = nNum($("f-dp").value);
+  S.f.tvafMin   = nNum($("f-tvaf").value);
+  S.f.nvafMax   = nNum($("f-nvaf").value);
+  S.f.tadMin    = nNum($("f-tad").value);
+  S.f.nadMax    = nNum($("f-nad").value);
+  S.pgSz = Number($("f-page-size").value) || 100;
+  S.pg = 1;
+}
+
+function parseReg(s) {
+  if (!s) return null;
+  const m = s.replace(/,/g, "").replace(/[Mm]/g, e => "000000").match(/^(chr)?(\w+?)(?::(\d+)(?:-(\d+))?)?$/i);
+  if (!m) return null;
+  return { chr: m[2], start: m[3] ? +m[3] : null, end: m[4] ? +m[4] : null };
+}
+function regMatch(r, reg) {
+  if (!reg) return true;
+  if (normC(r.chrom) !== normC(reg.chr)) return false;
+  if (reg.start != null && r.pos < reg.start) return false;
+  if (reg.end   != null && r.pos > reg.end)   return false;
+  return true;
+}
+
+function matchRow(r, f, ignoreCmp) {
+  if (f.search && !r._st.includes(f.search)) return false;
+  if (f.region && !regMatch(r, f.region)) return false;
+  if (f.stdChrOnly && !isStdChr(r.chrom)) return false;
+  if (S.bedActive && S.bed && !inBED(S.bed, r.chrom, r.pos)) return false;
+  if (f.qualMin != null && (r.qual == null || r.qual < f.qualMin)) return false;
+  if (f.oddsMin != null && (r.odds == null || r.odds < f.oddsMin)) return false;
+  if (f.mqmMin  != null && (r.mqm  == null || r.mqm  < f.mqmMin )) return false;
+  if (f.dpMin   != null && (r.dp   == null || r.dp   < f.dpMin  )) return false;
+  if (f.tvafMin != null && (r.t_vaf == null || r.t_vaf < f.tvafMin)) return false;
+  if (f.nvafMax != null && r.n_vaf != null && r.n_vaf > f.nvafMax) return false;
+  if (f.tadMin  != null && (r.t_ad == null || r.t_ad < f.tadMin)) return false;
+  if (f.nadMax  != null && r.n_ad != null && r.n_ad > f.nadMax) return false;
+  if (f.files.size   && !f.files.has(r.sourceId)) return false;
+  if (f.types.size   && !f.types.has(r.type)) return false;
+  if (f.filters.size && !f.filters.has(r.filter)) return false;
+  if (f.samples.size && !f.samples.has(r.sample)) return false;
+  if (!ignoreCmp && S.cmp.mode !== "all" && S.cmp.a != null && S.cmp.b != null && S.files.length >= 2) {
+    const fA = S.files.find(x => x.id === S.cmp.a);
+    const fB = S.files.find(x => x.id === S.cmp.b);
+    if (fA && fB) {
+      const inA = fA.keys && fA.keys.has(r._key);
+      const inB = fB.keys && fB.keys.has(r._key);
+      switch (S.cmp.mode) {
+        case "aonly": if (r.sourceId !== S.cmp.a || inB)  return false; break;
+        case "bonly": if (r.sourceId !== S.cmp.b || inA)  return false; break;
+        case "both":  if (r.sourceId !== S.cmp.a || !inB) return false; break;
+        case "union":
+          // From A: always pass. From B: only if not in A. Other files: drop.
+          if (r.sourceId === S.cmp.a) break;
+          if (r.sourceId === S.cmp.b && !inA) break;
+          return false;
+      }
+    }
+  }
+  return true;
+}
+
+function doFilter() {
+  const f = S.f;
+  S.filt = S.rows.filter(r => matchRow(r, f, false));
+}
+
+/* === Sort === */
+function toggleSort(k) {
+  if (S.sort.k === k) S.sort.d = (S.sort.d === "asc" ? "desc" : "asc");
+  else { S.sort.k = k; S.sort.d = NUM.has(k) ? "desc" : "asc"; }
+}
+function chromRank(c) {
+  const s = String(c||"").replace(/^chr/i, "");
+  if (/^\d+$/.test(s)) return [0, +s, 0];
+  if (s === "X") return [1, 0, 0];
+  if (s === "Y") return [1, 1, 0];
+  if (s === "M" || s === "MT") return [1, 2, 0];
+  return [2, 0, s];
+}
+function doSort() {
+  const d = S.sort.d === "asc" ? 1 : -1, k = S.sort.k;
+  S.filt.sort((a, b) => {
+    if (k === "locus") {
+      const ar = chromRank(a.chrom), br = chromRank(b.chrom);
+      if (ar[0] !== br[0]) return d*(ar[0]-br[0]);
+      if (ar[1] !== br[1]) return d*(ar[1]-br[1]);
+      if (ar[2] !== br[2]) return d*String(ar[2]).localeCompare(String(br[2]));
+      return d*(a.pos - b.pos);
+    }
+    let av = a[k], bv = b[k];
+    if (typeof av === "number" || typeof bv === "number") {
+      av = sn(av); bv = sn(bv);
+      if (av !== bv) return (av - bv) * d;
+    } else {
+      const c = String(av||"").localeCompare(String(bv||""));
+      if (c) return c * d;
+    }
+    return a.id - b.id;
+  });
+}
+
+/* === Render === */
+function render() {
+  doFilter(); doSort();
+  if (!S.filt.some(r => r.id === S.selId)) S.selId = S.filt.length ? S.filt[0].id : null;
+  rStats(); rChips(); rCompare(); rTable(); rDetail(); rCharts();
+  document.querySelectorAll("#thead th").forEach(th => {
+    const a = th.querySelector(".sa");
+    a.textContent = th.dataset.k === S.sort.k ? (S.sort.d === "asc" ? "▲" : "▼") : "";
+  });
+}
+
+/* === Compare panel === */
+function rCompare() {
+  // Populate dropdowns from S.files; default A=first, B=second when not yet chosen.
+  const aSel = $("cp-a"), bSel = $("cp-b");
+  const ids = S.files.map(f => f.id);
+  if (S.cmp.a == null || !ids.includes(S.cmp.a)) S.cmp.a = ids[0] || null;
+  if (S.cmp.b == null || !ids.includes(S.cmp.b)) S.cmp.b = ids[1] || ids[0] || null;
+  function fillSel(sel, currentId) {
+    sel.innerHTML = "";
+    for (const f of S.files) {
+      const o = document.createElement("option");
+      o.value = String(f.id);
+      const lbl = f.name.length > 50 ? f.name.slice(0, 48) + "…" : f.name;
+      o.textContent = lbl + "  (" + f.count.toLocaleString() + ")";
+      o.style.color = f.color;
+      if (f.id === currentId) o.selected = true;
+      sel.appendChild(o);
+    }
+  }
+  fillSel(aSel, S.cmp.a);
+  fillSel(bSel, S.cmp.b);
+
+  if (S.files.length < 2) {
+    $("cp-detail-row").innerHTML = '<div class="cp-empty">Load at least two VCFs to compare.</div>';
+    $("cp-modes").style.display = "none";
+    return;
+  }
+  $("cp-modes").style.display = "";
+  // restore detail row container if it was replaced by an empty message
+  if (!$("cp-venn") || !$("cp-stats")) {
+    $("cp-detail-row").innerHTML = '<div class="cp-venn" id="cp-venn"></div><div class="cp-stats" id="cp-stats"></div>';
+  }
+
+  // Compute counts honoring everything except cmp.mode (we want to know overlap on the post-filter rows
+  // so the Venn updates as the user tweaks per-site cutoffs).
+  const passByFile = new Map(); // fileId -> Set<key>
+  for (const f of S.files) passByFile.set(f.id, new Set());
+  // Filter S.rows under the same constraints as doFilter, but skip cmp.mode.
+  const ff = S.f, savedMode = S.cmp.mode; S.cmp.mode = "all";
+  for (const r of S.rows) {
+    if (!matchRow(r, ff, /*ignoreCmp=*/true)) continue;
+    passByFile.get(r.sourceId).add(r._key);
+  }
+  S.cmp.mode = savedMode;
+
+  const A = passByFile.get(S.cmp.a) || new Set();
+  const B = passByFile.get(S.cmp.b) || new Set();
+  let inter = 0;
+  const [s, big] = A.size <= B.size ? [A, B] : [B, A];
+  for (const k of s) if (big.has(k)) inter++;
+  const aOnly = A.size - inter, bOnly = B.size - inter;
+  const union = A.size + B.size - inter;
+  const jacc  = union ? inter/union : 0;
+  const overlap = Math.min(A.size, B.size) ? inter/Math.min(A.size, B.size) : 0;
+
+  const fA = S.files.find(f => f.id === S.cmp.a) || {color:"#6c8cff"};
+  const fB = S.files.find(f => f.id === S.cmp.b) || {color:"#f87171"};
+
+  $("cp-venn").innerHTML = vennSVG(A.size, B.size, inter, fA.color, fB.color);
+  $("cp-stats").innerHTML =
+    `<div class="k">|A|</div>     <div class="v a">${A.size.toLocaleString()}</div>` +
+    `<div class="k">|B|</div>     <div class="v b">${B.size.toLocaleString()}</div>` +
+    `<div class="k">A only</div>  <div class="v">${aOnly.toLocaleString()}</div>` +
+    `<div class="k">A ∩ B</div>  <div class="v ab">${inter.toLocaleString()}</div>` +
+    `<div class="k">B only</div>  <div class="v">${bOnly.toLocaleString()}</div>` +
+    `<div class="k">A ∪ B</div>  <div class="v">${union.toLocaleString()}</div>` +
+    `<div class="k">Jaccard</div> <div class="v">${jacc.toFixed(4)}</div>` +
+    `<div class="k">Overlap</div> <div class="v">${overlap.toFixed(4)}</div>`;
+
+  // Wire region clicks on the Venn (set the mode chip, re-render).
+  $("cp-venn").querySelectorAll("[data-cmpmode]").forEach(el => {
+    el.addEventListener("click", () => {
+      S.cmp.mode = el.dataset.cmpmode;
+      syncCmpModeChips();
+      S.pg = 1; render();
+    });
+  });
+
+  syncCmpModeChips();
+}
+
+function syncCmpModeChips() {
+  document.querySelectorAll("[data-cmpmode]").forEach(el => {
+    el.classList.toggle("on", el.dataset.cmpmode === S.cmp.mode);
+  });
+}
+
+function vennSVG(a, b, inter, colorA, colorB) {
+  // Area-proportional-ish: radius = sqrt(count) * scale; position scaled by Jaccard.
+  const total = Math.max(a + b - inter, 1);
+  const minR = 28, maxR = 60;
+  const refMax = Math.max(a, b, 1);
+  const rA = Math.max(minR, Math.min(maxR, maxR * Math.sqrt(a / refMax)));
+  const rB = Math.max(minR, Math.min(maxR, maxR * Math.sqrt(b / refMax)));
+  const j = total ? inter/total : 0;
+  // Distance between centers: 0 (full overlap) → ~rA+rB-2 (just touching).
+  const d = (rA + rB) * (1 - 0.85 * j);
+  const W = 220, H = 150;
+  const cx = W/2, cy = H/2;
+  const x1 = cx - d/2, x2 = cx + d/2;
+  const numColor = "#e1e4ed";
+  return `
+  <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="font-family:'SF Mono','Consolas',monospace">
+    <!-- B only (right): clickable larger zone behind everything -->
+    <circle cx="${x2}" cy="${cy}" r="${rB}" fill="${colorB}" fill-opacity="0.30" stroke="${colorB}" stroke-width="1.2"
+            data-cmpmode="bonly" style="cursor:pointer">
+      <title>B only — click to filter</title>
+    </circle>
+    <!-- A circle on top -->
+    <circle cx="${x1}" cy="${cy}" r="${rA}" fill="${colorA}" fill-opacity="0.30" stroke="${colorA}" stroke-width="1.2"
+            data-cmpmode="aonly" style="cursor:pointer">
+      <title>A only — click to filter</title>
+    </circle>
+    <!-- intersection click target: small circle in the middle (best-effort, not strictly the lens) -->
+    <circle cx="${(x1+x2)/2}" cy="${cy}" r="${Math.max(8, Math.min(rA, rB) * 0.35 * (j+0.2))}"
+            fill="#a855f7" fill-opacity="0.0" stroke="#a855f7" stroke-width="0.8" stroke-dasharray="2,2"
+            data-cmpmode="both" style="cursor:pointer">
+      <title>A ∩ B — click to filter</title>
+    </circle>
+    <!-- counts -->
+    <text x="${x1 - rA*0.45}" y="${cy + 4}" text-anchor="middle" fill="${numColor}" font-size="11"   pointer-events="none">${(a-inter).toLocaleString()}</text>
+    <text x="${(x1+x2)/2}"     y="${cy + 4}" text-anchor="middle" fill="#d8b4fe"   font-size="11" font-weight="600" pointer-events="none">${inter.toLocaleString()}</text>
+    <text x="${x2 + rB*0.45}" y="${cy + 4}" text-anchor="middle" fill="${numColor}" font-size="11"   pointer-events="none">${(b-inter).toLocaleString()}</text>
+    <text x="${x1 - rA*0.45}" y="${cy - rA - 5}" text-anchor="middle" fill="${colorA}" font-size="9" pointer-events="none">A only</text>
+    <text x="${(x1+x2)/2}"     y="${cy - Math.max(rA,rB) - 5}" text-anchor="middle" fill="#a855f7" font-size="9" pointer-events="none">A ∩ B</text>
+    <text x="${x2 + rB*0.45}" y="${cy - rB - 5}" text-anchor="middle" fill="${colorB}" font-size="9" pointer-events="none">B only</text>
+  </svg>`;
+}
+
+function tPages() { return Math.max(1, Math.ceil(S.filt.length / S.pgSz)); }
+
+function rStats() {
+  $("s-total").textContent = S.rows.length.toLocaleString();
+  $("s-shown").textContent = S.filt.length.toLocaleString();
+  $("s-pass").textContent  = S.filt.filter(r => r.filter === "PASS" || r.filter === ".").length.toLocaleString();
+  $("s-snv").textContent   = S.filt.filter(r => r.type === "snp").length.toLocaleString();
+  $("s-indel").textContent = S.filt.filter(r => r.type === "ins" || r.type === "del").length.toLocaleString();
+  $("s-files").textContent = S.files.length.toLocaleString();
+  $("s-bed").innerHTML = S.bed ? ('BED: <span class="sv">' + S.bed.intervalCount.toLocaleString() + ' regions' + (S.bedActive ? ' (on)' : ' (off)') + '</span>') : "";
+  $("export-btn").disabled = !S.filt.length;
+}
+
+function rChips() {
+  const bar = $("chip-bar"); bar.innerHTML = "";
+  const groups = [
+    { k: "files",   l: "File",   field: "sourceId", labelOf: id => { const f = S.files.find(x=>x.id===id); return f ? f.name : ("file#"+id); } },
+    { k: "types",   l: "Type",   field: "type",     labelOf: v => v },
+    { k: "filters", l: "Filter", field: "filter",   labelOf: v => (v===""||v==="."?".":v) },
+    { k: "samples", l: "Tumor",  field: "sample",   labelOf: v => v },
+  ];
+  for (const g of groups) {
+    const universe = cntBy(S.rows, g.field);
+    if (!universe.size) continue;
+    const filteredCnts = cntBy(S.filt, g.field);
+    const wrap = document.createElement("div"); wrap.className = "ctrl";
+    wrap.innerHTML = '<label>' + esc(g.l) + '</label>';
+    const chips = document.createElement("div"); chips.className = "chips";
+    Array.from(universe.entries()).sort((a,b) => {
+      const fa = filteredCnts.get(a[0]) || 0, fb = filteredCnts.get(b[0]) || 0;
+      return fb - fa || (b[1] - a[1]);
+    }).forEach(([v, total]) => {
+      const n = filteredCnts.get(v) || 0;
+      const c = document.createElement("button");
+      c.className = "chip" + (S.f[g.k].has(v) ? " on" : "") + (n === 0 ? " empty" : "");
+      const lbl = g.labelOf(v);
+      const short = (typeof lbl === "string" && lbl.length > 28) ? (lbl.slice(0,26) + "…") : lbl;
+      c.textContent = short + " (" + n.toLocaleString() + ")";
+      c.title = lbl + " — " + n.toLocaleString() + " of " + total.toLocaleString() + " rows match";
+      c.onclick = () => { togSet(S.f[g.k], v); S.pg = 1; render(); };
+      chips.appendChild(c);
+    });
+    wrap.appendChild(chips); bar.appendChild(wrap);
+  }
+}
+
+/* === Table === */
+function rTable() {
+  const tp = tPages(); if (S.pg > tp) S.pg = tp;
+  const s = (S.pg - 1) * S.pgSz, e = s + S.pgSz, page = S.filt.slice(s, e);
+  if (!page.length) {
+    $("tbody").innerHTML = '<tr><td colspan="' + TCOLS.length + '" style="padding:1rem;text-align:center;color:var(--text2)">No rows match</td></tr>';
+  } else {
+    const h = [];
+    for (const r of page) {
+      h.push('<tr data-id="' + r.id + '"' + (r.id === S.selId ? ' class="sel"' : '') + '>');
+      for (const c of TCOLS) {
+        let v = r[c.k]; let cls = c.n ? "num" : "";
+        if (c.w) cls += (cls ? " " : "") + "w-" + c.w;
+        if (c.k === "filter") cls += " " + (v === "PASS" || v === "." ? "pass" : "nopass");
+        if (c.k === "type") cls += " type-" + (v||"").replace(/[^a-z]/gi,"");
+        if (c.k === "locus") {
+          if (v) h.push('<td class="' + cls + '"><a class="igv-link" href="#" data-locus="' + esc(v) + '">' + esc(v) + '</a></td>');
+          else   h.push('<td class="' + cls + '">-</td>');
+          continue;
+        }
+        if (c.k === "source") {
+          const f = S.files.find(x => x.id === r.sourceId);
+          const color = f ? f.color : "#888";
+          h.push('<td class="' + cls + '"><span style="color:' + color + '">●</span> ' + esc(v||"-") + '</td>');
+          continue;
+        }
+        if (typeof v === "number" && c.k !== "pos") v = fN(v, c.k);
+        h.push('<td class="' + cls + '" title="' + esc(v||"") + '">' + esc(v == null ? "-" : v) + '</td>');
+      }
+      h.push('</tr>');
+    }
+    $("tbody").innerHTML = h.join("");
+    $("tbody").querySelectorAll("tr[data-id]").forEach(tr => {
+      tr.addEventListener("mousedown", e => { tr._mdx = e.clientX; tr._mdy = e.clientY; });
+      tr.onclick = e => {
+        const dx = e.clientX - (tr._mdx||e.clientX), dy = e.clientY - (tr._mdy||e.clientY);
+        if (Math.hypot(dx, dy) > 4) return;
+        const sel = window.getSelection && window.getSelection();
+        if (sel && sel.toString().length > 0) return;
+        if (e.target && e.target.closest && e.target.closest("a.igv-link")) return;
+        S.selId = +tr.dataset.id; rTable(); rDetail();
+      };
+    });
+    $("tbody").querySelectorAll("a.igv-link").forEach(a => {
+      a.addEventListener("click", e => {
+        e.preventDefault(); e.stopPropagation();
+        igvGoto(a.dataset.locus, a);
+      });
+    });
+  }
+  $("pg-info").textContent = "Page " + S.pg + "/" + tp + " (" + S.filt.length.toLocaleString() + " rows)";
+  $("pg-prev").disabled = $("pg-first").disabled = S.pg <= 1;
+  $("pg-next").disabled = $("pg-last").disabled  = S.pg >= tp;
+}
+
+/* === Detail === */
+function rDetail() {
+  const r = S.filt.find(x => x.id === S.selId) || S.rows.find(x => x.id === S.selId);
+  if (!r) { $("dp-body").innerHTML = '<div class="dp-empty">Click a row</div>'; $("dp-locus").textContent = "-"; return; }
+  $("dp-locus").textContent = r.chrom + ":" + r.pos + " " + r.ref + ">" + r.alt + " | " + r.type + " | " + (r.filter || ".") + " | " + r.source;
+
+  let h = '<table class="kv">';
+  h += kv("CHROM", r.chrom);
+  h += kv("POS", r.pos);
+  h += kv("REF", r.ref);
+  h += kv("ALT", r.alt);
+  h += kv("TYPE", r.type);
+  h += kv("QUAL", r.qual);
+  h += kv("FILTER", r.filter);
+  h += kv("Source file", r.source + ' (#' + r.sourceId + ')');
+  h += kv("Genes", r.genes || "—");
+  // INFO fields, sorted
+  const infoKeys = Object.keys(r.info).sort();
+  for (const k of infoKeys) h += kvI("INFO/" + k, r.info[k]);
+  // Per-sample
+  if (r.fmtKeys && r.T) h += kvSamp(r.sample + " (tumor)",  r.fmtKeys, r.T);
+  if (r.fmtKeys && r.N) h += kvSamp(r.normalSample + " (normal)", r.fmtKeys, r.N);
+  h += '<tr><td class="k">Raw VCF</td><td class="v" style="font-size:.66rem">' + esc(r.raw) + '</td></tr>';
+  h += '</table>';
+  $("dp-body").innerHTML = h;
+}
+function kv(k, v) {
+  return '<tr><td class="k">' + esc(k) + '</td><td class="v">' + esc(v == null ? "—" : (typeof v === "number" ? fN(v) : v)) + '</td></tr>';
+}
+function kvI(k, v) { return '<tr><td class="k" style="font-size:.66rem">' + esc(k) + '</td><td class="v" style="font-size:.66rem">' + esc(v) + '</td></tr>'; }
+function kvSamp(label, keys, sample) {
+  const parts = keys.map(k => esc(k) + '=' + esc(sample[k] == null ? "" : sample[k])).join("  ");
+  return '<tr class="samp"><td class="k">' + esc(label) + '</td><td class="v">' + parts + '</td></tr>';
+}
+
+/* === Charts === */
+function rCharts() {
+  const qv = S.filt.map(r => r.qual).filter(v => v != null && Number.isFinite(v));
+  const ov = S.filt.map(r => r.odds).filter(v => v != null && Number.isFinite(v));
+  const tv = S.filt.map(r => r.t_vaf).filter(v => v != null && Number.isFinite(v));
+  hist("c-qual", S.logScale.qual ? qv.map(symlog) : qv, "#6c8cff", S.logScale.qual);
+  hist("c-odds", S.logScale.odds ? ov.map(symlog) : ov, "#4ade80", S.logScale.odds);
+  hist("c-tvaf", tv, "#a855f7", false);
+}
+function hist(id, vals, color, isLog) {
+  const cv = $(id), ctx = cv.getContext("2d"), dpr = devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight; cv.width = w*dpr; cv.height = h*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  if (!vals.length) { ctx.fillStyle = "#555"; ctx.font = "10px monospace"; ctx.fillText("no data", w/2-18, h/2); return; }
+  const nb = Math.min(40, Math.max(8, Math.ceil(Math.sqrt(vals.length))));
+  const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1, bw = rng/nb;
+  const bins = new Array(nb).fill(0);
+  for (const v of vals) { let i = Math.floor((v - mn)/bw); if (i >= nb) i = nb - 1; bins[i]++; }
+  const mxB = Math.max(...bins);
+  const p = { l:32, r:4, t:4, b:18 }, pw = w - p.l - p.r, ph = h - p.t - p.b;
+  ctx.fillStyle = color; ctx.globalAlpha = 0.7;
+  const bW = pw / nb;
+  for (let i = 0; i < nb; i++) { const bh = mxB > 0 ? (bins[i]/mxB) * ph : 0; ctx.fillRect(p.l + i*bW, p.t + ph - bh, Math.max(bW - 0.5, 1), bh); }
+  ctx.globalAlpha = 1; ctx.strokeStyle = "#444"; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(p.l, p.t); ctx.lineTo(p.l, p.t + ph); ctx.lineTo(p.l + pw, p.t + ph); ctx.stroke();
+  ctx.fillStyle = "#777"; ctx.font = "9px monospace"; ctx.textAlign = "center";
+  for (let i = 0; i <= 3; i++) { const tv = mn + rng*i/3; ctx.fillText(isLog ? fmtSymlog(tv) : tv.toFixed(2).replace(/\.?0+$/,""), p.l + pw*i/3, h - 2); }
+  if (isLog) { ctx.textAlign = "left"; ctx.fillStyle = "#6c8cff"; ctx.fillText("symlog10", p.l + 2, p.t + 9); }
+  ctx.fillStyle = "#777"; ctx.textAlign = "right";
+  for (let i = 0; i <= 2; i++) ctx.fillText(Math.round(mxB*i/2).toLocaleString(), p.l - 2, p.t + ph - ph*i/2 + 3);
+}
+
+/* === Loaded files list === */
+function renderFilesList() {
+  const wrap = $("files-list");
+  if (!S.files.length) { wrap.style.display = "none"; return; }
+  wrap.style.display = "";
+  wrap.innerHTML = S.files.map(f =>
+    `<div class="row" data-fid="${f.id}">` +
+      `<span class="nm" style="color:${f.color}">● ${esc(f.name)}</span>` +
+      `<span class="ct">${f.count.toLocaleString()}</span>` +
+      `<span class="x" data-rm="${f.id}" title="Remove this file">✕</span>` +
+    `</div>`
+  ).join("");
+  wrap.querySelectorAll("[data-rm]").forEach(x => {
+    x.onclick = e => {
+      e.stopPropagation();
+      const fid = +x.dataset.rm;
+      S.files = S.files.filter(f => f.id !== fid);
+      S.rows = S.rows.filter(r => r.sourceId !== fid);
+      // re-id rows so id stays dense (helps sort tiebreak determinism)
+      S.rows.forEach((r, i) => r.id = i);
+      S.f.files.delete(fid);
+      // If we removed a file currently used in the compare panel, reset that side.
+      if (S.cmp.a === fid) S.cmp.a = null;
+      if (S.cmp.b === fid) S.cmp.b = null;
+      if (!S.files.length) {
+        $("vcf-zone").classList.remove("loaded");
+        $("file-meta").textContent = "No files loaded";
+        ["controls","chip-bar","stats-bar","compare-panel","charts-row","table-wrap","pagination","detail-panel"].forEach(id => $(id).style.display = "none");
+      }
+      renderFilesList(); render();
+    };
+  });
+}
+
+function showWorkspace() {
+  ["controls","chip-bar","stats-bar","compare-panel","charts-row","table-wrap","pagination","detail-panel"].forEach(id => { $(id).style.display = ""; });
+  $("vcf-zone").classList.add("loaded");
+  $("vcf-name").style.display = "";
+  $("vcf-name").textContent = S.files.length + " file" + (S.files.length===1?"":"s") + " loaded";
+}
+
+/* === Export === */
+function exportTSV() {
+  if (!S.filt.length) return;
+  const cols = TCOLS.map(c => c.k);
+  const head = "#" + cols.join("\t");
+  const lines = [head];
+  for (const r of S.filt) {
+    lines.push(cols.map(k => {
+      const v = r[k];
+      if (v == null) return "";
+      if (typeof v === "number") {
+        if (k === "t_vaf" || k === "n_vaf") return v.toFixed(4);
+        return String(v);
+      }
+      return String(v).replace(/\t/g," ");
+    }).join("\t"));
+  }
+  const blob = new Blob([lines.join("\n") + "\n"], { type: "text/tab-separated-values" });
+  const u = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = u; a.download = "freebayes_filtered.tsv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 1500);
+}
+
+/* === HTTP auto-load === */
+async function tryHttpAutoLoad() {
+  if (location.protocol === "file:") return;
+  const url = new URL(location.href);
+  const dir = (url.searchParams.get("dir") || "subsets/default").replace(/\/+$/, "") + "/";
+  try {
+    const res = await fetch(dir, { headers: { "Accept": "text/html" } });
+    if (!res.ok) return;
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const hrefs = Array.from(doc.querySelectorAll("a"))
+                       .map(a => a.getAttribute("href") || "")
+                       .filter(h => /\.vcf(\.gz)?$/i.test(h));
+    if (!hrefs.length) return;
+    const files = [];
+    for (const h of hrefs) {
+      try {
+        const r = await fetch(new URL(h, new URL(dir, location.href)));
+        if (!r.ok) continue;
+        const buf = await r.arrayBuffer();
+        const name = decodeURIComponent(h.split("/").pop().split("?")[0]);
+        files.push(new File([buf], name));
+      } catch (_) {}
+    }
+    if (files.length) loadVCFs(files);
+  } catch (_) {}
+}
+
+/* === Util === */
+function mNum(s) { if (s == null || s === "" || s === "." || s === "NA" || s === "NOTSET") return null; const v = +s; return Number.isFinite(v) ? v : null; }
+function nNum(s) { if (s === "" || s == null) return null; const v = +s; return Number.isFinite(v) ? v : null; }
+function symlog(v) { return Math.sign(v) * Math.log10(1 + Math.abs(v)); }
+function fmtSymlog(t) { const v = Math.sign(t) * (Math.pow(10, Math.abs(t)) - 1); if (Math.abs(v) >= 100) return v.toFixed(0); if (Math.abs(v) >= 10) return v.toFixed(1); return v.toFixed(2); }
+function isStdChr(c) { return /^([1-9]|1[0-9]|2[0-2]|x|y|m|mt)$/i.test(normC(c)); }
+function igvLoc(chr, pos) {
+  if (chr == null || chr === "" || pos == null || !Number.isFinite(+pos)) return "";
+  let c = String(chr).replace(/^#/, "");
+  if (!/^chr/i.test(c)) c = "chr" + c;
+  return c + ":" + pos;
+}
+function igvGoto(locus, anchor) {
+  if (!locus) return;
+  const url = "http://localhost:60151/goto?locus=" + encodeURIComponent(locus);
+  fetch(url, { mode: "no-cors", cache: "no-store" })
+    .then(() => { if (anchor) { anchor.classList.remove("err"); anchor.classList.add("ok"); setTimeout(() => anchor.classList.remove("ok"), 600); } })
+    .catch(() => { if (anchor) { anchor.classList.add("err"); setTimeout(() => anchor.classList.remove("err"), 1500); } });
+}
+function sn(v) { if (v === Infinity) return 9e15; if (v == null || Number.isNaN(v)) return -9e15; return +v; }
+function fN(v, k) {
+  if (v == null) return "-";
+  if (k === "t_vaf" || k === "n_vaf") return v.toFixed(3);
+  if (Math.abs(v) >= 100 || Number.isInteger(v)) return v.toLocaleString();
+  return v.toFixed(2).replace(/\.?0+$/, "");
+}
+function normC(s) { return typeof s === "string" ? s.replace(/^chr/i, "").toLowerCase() : ""; }
+function cntBy(rows, k) { const m = new Map(); for (const r of rows) { const v = r[k]; m.set(v, (m.get(v)||0) + 1); } return m; }
+function togSet(set, v) { set.has(v) ? set.delete(v) : set.add(v); }
+function esc(v) { return String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* === Boot === */
+tryHttpAutoLoad();
+
+})();
+</script>
+</body>
+</html>

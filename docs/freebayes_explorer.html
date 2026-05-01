@@ -1329,11 +1329,30 @@ function exportTSV() {
   setTimeout(() => URL.revokeObjectURL(u), 1500);
 }
 
-/* === HTTP auto-load === */
+/* === HTTP auto-load ==================================================
+ * Two paths:
+ *   1. <dir>/manifest.json  — works on GitHub Pages (no dir listings)
+ *   2. <dir>/              — HTML directory listing (python -m http.server)
+ * Default dir is "default"; override with ?dir=other/path on the URL.
+ */
 async function tryHttpAutoLoad() {
   if (location.protocol === "file:") return;
   const url = new URL(location.href);
-  const dir = (url.searchParams.get("dir") || "subsets/default").replace(/\/+$/, "") + "/";
+  const dir = (url.searchParams.get("dir") || "default").replace(/\/+$/, "") + "/";
+  const baseURL = new URL(dir, location.href);
+
+  // 1) Try manifest.json — works on hosts that don't serve directory indexes (GitHub Pages, etc.)
+  try {
+    const mres = await fetch(new URL("manifest.json", baseURL));
+    if (mres.ok) {
+      const mj = await mres.json();
+      const names = Array.isArray(mj) ? mj : (mj.files || []);
+      const files = await fetchAllAsFiles(names.filter(n => /\.vcf(\.gz)?$/i.test(n)), baseURL);
+      if (files.length) { loadVCFs(files); return; }
+    }
+  } catch (_) {}
+
+  // 2) Fall back to HTML directory-listing parsing (python -m http.server, nginx default, etc.)
   try {
     const res = await fetch(dir, { headers: { "Accept": "text/html" } });
     if (!res.ok) return;
@@ -1343,18 +1362,23 @@ async function tryHttpAutoLoad() {
                        .map(a => a.getAttribute("href") || "")
                        .filter(h => /\.vcf(\.gz)?$/i.test(h));
     if (!hrefs.length) return;
-    const files = [];
-    for (const h of hrefs) {
-      try {
-        const r = await fetch(new URL(h, new URL(dir, location.href)));
-        if (!r.ok) continue;
-        const buf = await r.arrayBuffer();
-        const name = decodeURIComponent(h.split("/").pop().split("?")[0]);
-        files.push(new File([buf], name));
-      } catch (_) {}
-    }
+    const files = await fetchAllAsFiles(hrefs, baseURL);
     if (files.length) loadVCFs(files);
   } catch (_) {}
+}
+
+async function fetchAllAsFiles(names, baseURL) {
+  const out = [];
+  for (const n of names) {
+    try {
+      const r = await fetch(new URL(n, baseURL));
+      if (!r.ok) continue;
+      const buf = await r.arrayBuffer();
+      const stem = decodeURIComponent(n.split("/").pop().split("?")[0]);
+      out.push(new File([buf], stem));
+    } catch (_) {}
+  }
+  return out;
 }
 
 /* === Util === */

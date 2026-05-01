@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor
+.vscode/
+.idea/
+
+# Local working files
+*.bak
+*.tmp
+*.log
+
+# Common large/raw inputs not meant to be hosted (only the subsets in docs/default/ should be tracked)
+*.bam
+*.bai
+*.cram
+*.crai
+raw/
+work/
+
+# Don't track unintended .vcf.gz / .vcf at the repo root — only docs/default/ versions are served
+/*.vcf
+/*.vcf.gz

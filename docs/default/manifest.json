@@ -1,0 +1,9 @@
+{
+  "name": "ucn1 default subsets",
+  "description": "FreeBayes tumor-vs-normal somatic subsets, default cutoffs.",
+  "files": [
+    "BostonGene_bladder23_freebayes_tumor_vs_normal.somatic_subset.vcf",
+    "CeGaT_liver_2023_tumor_vs_normal.freebayes.somatic_subset.vcf",
+    "bladder_n1_Personalis_20250314_WGS_results_freebayes_variant_calling_freebayes_tumor_vs_normal_tumor_vs_normal.freebayes.somatic_subset.vcf"
+  ]
+}
